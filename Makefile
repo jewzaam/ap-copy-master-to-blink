@@ -29,7 +29,7 @@ lint: install-dev
 	$(PYTHON) -m flake8 --max-line-length=88 --extend-ignore=E203,W503,E501,F401 ap_copy_master_to_blink tests
 
 typecheck: install-dev
-	$(PYTHON) -m mypy ap_copy_master_to_blink || true
+	$(PYTHON) -m mypy ap_copy_master_to_blink
 
 # Testing (install deps first, then run tests)
 test: install-dev
