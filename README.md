@@ -1,5 +1,12 @@
 # ap-copy-master-to-blink
 
+[![Test](https://github.com/jewzaam/ap-copy-master-to-blink/actions/workflows/test.yml/badge.svg)](https://github.com/jewzaam/ap-copy-master-to-blink/actions/workflows/test.yml)
+[![Coverage](https://github.com/jewzaam/ap-copy-master-to-blink/actions/workflows/coverage.yml/badge.svg)](https://github.com/jewzaam/ap-copy-master-to-blink/actions/workflows/coverage.yml)
+[![Lint](https://github.com/jewzaam/ap-copy-master-to-blink/actions/workflows/lint.yml/badge.svg)](https://github.com/jewzaam/ap-copy-master-to-blink/actions/workflows/lint.yml)
+[![Format](https://github.com/jewzaam/ap-copy-master-to-blink/actions/workflows/format.yml/badge.svg)](https://github.com/jewzaam/ap-copy-master-to-blink/actions/workflows/format.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 Copy master calibration frames from library to blink directories where light frames are located.
 
 ## Overview
@@ -167,6 +174,12 @@ Tests cover:
 - Dark/flat/bias matching logic
 - File copying and directory scanning
 - Edge cases (missing masters, date mismatches)
+
+## Documentation
+
+- [Pipeline Overview](docs/pipeline-overview.md) - High-level architecture and data flow
+- [Workflow Guide](docs/workflow-guide.md) - Step-by-step usage with diagrams
+- [API Reference](docs/api-reference.md) - Tool-specific API documentation
 
 ## Repository
 
