@@ -44,7 +44,9 @@ def validate_directories(
     return True, None
 
 
-def print_header(library_dir: Path, blink_dir: Path, dry_run: bool) -> None:
+def print_header(
+    library_dir: Path, blink_dir: Path, dry_run: bool, flat_date_tolerance: int
+) -> None:
     """
     Print header before processing.
 
@@ -52,6 +54,7 @@ def print_header(library_dir: Path, blink_dir: Path, dry_run: bool) -> None:
         library_dir: Path to calibration library
         blink_dir: Path to blink directory tree
         dry_run: Whether this is a dry run
+        flat_date_tolerance: Date tolerance in days for flat frame matching
     """
     print(f"\n{'='*70}")
     print("ap-copy-master-to-blink")
@@ -59,6 +62,7 @@ def print_header(library_dir: Path, blink_dir: Path, dry_run: bool) -> None:
     print(f"Library: {library_dir}")
     print(f"Blink:   {blink_dir}")
     print(f"Dry-run: {dry_run}")
+    print(f"Flat date tolerance: {flat_date_tolerance} days")
     print(f"{'='*70}\n")
 
 
@@ -131,6 +135,16 @@ Examples:
         help="Enable debug logging",
     )
 
+    parser.add_argument(
+        "--flat-date-tolerance",
+        type=int,
+        default=0,
+        metavar="DAYS",
+        help="Date tolerance in days for flat frame matching (default: 0 = exact match only). "
+        "When set, flats from nearby dates will be used if exact match not found, "
+        "preferring older flats (most recent within tolerance), then newer flats (oldest within tolerance).",
+    )
+
     args = parser.parse_args()
 
     # Setup logging
@@ -148,10 +162,15 @@ Examples:
         return 1
 
     # Print header
-    print_header(library_dir, blink_dir, args.dry_run)
+    print_header(library_dir, blink_dir, args.dry_run, args.flat_date_tolerance)
 
     # Process blink directory
-    stats = process_blink_directory(library_dir, blink_dir, dry_run=args.dry_run)
+    stats = process_blink_directory(
+        library_dir,
+        blink_dir,
+        dry_run=args.dry_run,
+        flat_date_tolerance=args.flat_date_tolerance,
+    )
 
     # Print summary
     print_summary(stats)
