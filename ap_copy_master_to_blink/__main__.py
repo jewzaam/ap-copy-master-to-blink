@@ -44,7 +44,9 @@ def validate_directories(
     return True, None
 
 
-def print_header(library_dir: Path, blink_dir: Path, dry_run: bool) -> None:
+def print_header(
+    library_dir: Path, blink_dir: Path, dry_run: bool, flat_date_tolerance: int
+) -> None:
     """
     Print header before processing.
 
@@ -52,6 +54,7 @@ def print_header(library_dir: Path, blink_dir: Path, dry_run: bool) -> None:
         library_dir: Path to calibration library
         blink_dir: Path to blink directory tree
         dry_run: Whether this is a dry run
+        flat_date_tolerance: Date tolerance in days for flat frame matching
     """
     print(f"\n{'='*70}")
     print("ap-copy-master-to-blink")
@@ -59,6 +62,7 @@ def print_header(library_dir: Path, blink_dir: Path, dry_run: bool) -> None:
     print(f"Library: {library_dir}")
     print(f"Blink:   {blink_dir}")
     print(f"Dry-run: {dry_run}")
+    print(f"Flat date tolerance: {flat_date_tolerance} days")
     print(f"{'='*70}\n")
 
 
@@ -95,10 +99,13 @@ Examples:
   python -m ap_copy_master_to_blink <library_dir> <blink_dir>
 
   # With dry-run
-  python -m ap_copy_master_to_blink <library_dir> <blink_dir> --dry-run
+  python -m ap_copy_master_to_blink <library_dir> <blink_dir> --dryrun
 
   # With debug output
   python -m ap_copy_master_to_blink <library_dir> <blink_dir> --debug
+
+  # With flat date tolerance (use flats within 7 days)
+  python -m ap_copy_master_to_blink <library_dir> <blink_dir> --flat-date-tolerance 7
 
   # Real example
   python -m ap_copy_master_to_blink \\
@@ -120,15 +127,32 @@ Examples:
     )
 
     parser.add_argument(
-        "--dry-run",
+        "--dryrun",
         action="store_true",
         help="Show what would be copied without actually copying files",
+    )
+
+    parser.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        help="Suppress progress output",
     )
 
     parser.add_argument(
         "--debug",
         action="store_true",
         help="Enable debug logging",
+    )
+
+    parser.add_argument(
+        "--flat-date-tolerance",
+        type=int,
+        default=0,
+        metavar="DAYS",
+        help="Date tolerance in days for flat frame matching (default: 0 = exact match only). "
+        "When set, flats from nearby dates will be used if exact match not found, "
+        "preferring older flats (most recent within tolerance), then newer flats (oldest within tolerance).",
     )
 
     args = parser.parse_args()
@@ -147,18 +171,28 @@ Examples:
         print(f"Error: {error_message}", file=sys.stderr)
         return 1
 
-    # Print header
-    print_header(library_dir, blink_dir, args.dry_run)
+    # Print header (unless quiet mode)
+    if not args.quiet:
+        print_header(library_dir, blink_dir, args.dryrun, args.flat_date_tolerance)
 
     # Process blink directory
-    stats = process_blink_directory(library_dir, blink_dir, dry_run=args.dry_run)
+    stats = process_blink_directory(
+        library_dir,
+        blink_dir,
+        dry_run=args.dryrun,
+        flat_date_tolerance=args.flat_date_tolerance,
+    )
 
-    # Print summary
-    print_summary(stats)
+    # Print summary (unless quiet mode)
+    if not args.quiet:
+        print_summary(stats)
 
     # Return non-zero if any masters were missing
     if stats["darks_missing"] > 0 or stats["flats_missing"] > 0:
-        print("Warning: Some master frames are missing. Check logs above for details.")
+        if not args.quiet:
+            print(
+                "Warning: Some master frames are missing. Check logs above for details."
+            )
         return 1
 
     return 0
