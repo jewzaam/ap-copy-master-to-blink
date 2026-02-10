@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Set, Tuple
 import logging
 
-from ap_common import get_metadata, copy_file, get_filenames
+from ap_common import get_metadata, copy_file
 from ap_common.constants import (
     NORMALIZED_HEADER_CAMERA,
     NORMALIZED_HEADER_GAIN,
@@ -18,6 +18,7 @@ from ap_common.constants import (
     NORMALIZED_HEADER_EXPOSURESECONDS,
     NORMALIZED_HEADER_FILTER,
     NORMALIZED_HEADER_DATE,
+    NORMALIZED_HEADER_FILENAME,
     TYPE_MASTER_DARK,
     TYPE_MASTER_BIAS,
     TYPE_MASTER_FLAT,
@@ -79,19 +80,26 @@ def scan_blink_directories(blink_dir: Path) -> List[Dict[str, str]]:
     """
     logger.info(f"Scanning blink directory: {blink_dir}")
 
-    # Get all light frame files
-    light_files = get_filenames(
-        blink_dir, extensions=SUPPORTED_EXTENSIONS, recursive=True
+    # Get metadata for all light frames
+    # Convert extensions to regex patterns for get_metadata
+    patterns = [rf".*\{ext}$" for ext in SUPPORTED_EXTENSIONS]
+    metadata = get_metadata(
+        dirs=[str(blink_dir)],
+        profileFromPath=True,
+        patterns=patterns,
+        recursive=True,
+        required_properties=[],
+        printStatus=False,
     )
 
-    if not light_files:
+    if not metadata:
         logger.warning(f"No light frames found in {blink_dir}")
         return []
 
-    logger.info(f"Found {len(light_files)} light frames")
+    logger.info(f"Found {len(metadata)} light frames")
 
-    # Read metadata for all light frames
-    metadata_list = get_metadata(light_files)
+    # Convert metadata dict to list of dicts (get_metadata returns {filename: metadata})
+    metadata_list = list(metadata.values())
 
     logger.info(f"Read metadata for {len(metadata_list)} light frames")
 
@@ -148,14 +156,14 @@ def copy_master_to_blink(
     Copy master calibration frame to blink directory.
 
     Args:
-        master_metadata: Metadata dict for master frame (includes 'filepath')
+        master_metadata: Metadata dict for master frame (includes 'filename')
         dest_dir: Destination directory (DATE directory)
         dry_run: If True, log action but don't copy
 
     Returns:
         True if copied (or would be copied in dry-run), False if skipped
     """
-    source_path = Path(master_metadata["filepath"])
+    source_path = Path(master_metadata[NORMALIZED_HEADER_FILENAME])
     dest_path = dest_dir / source_path.name
 
     if dest_path.exists():
@@ -167,7 +175,7 @@ def copy_master_to_blink(
         return True
 
     logger.info(f"Copying: {source_path.name} -> {dest_dir}")
-    copy_file(source_path, dest_path)
+    copy_file(str(source_path), str(dest_path))
     return True
 
 
@@ -238,47 +246,58 @@ def process_blink_directory(
         bias = masters[TYPE_MASTER_BIAS]
         flat = masters[TYPE_MASTER_FLAT]
 
-        # Get destination directory (DATE directory)
-        lights_dir = Path(light_metadata["filepath"]).parent
-        date_dir = get_date_directory(lights_dir)
+        # Get all unique DATE directories in this group
+        # (lights from multiple targets may share the same calibration config)
+        date_dirs = set()
+        for light in lights:
+            lights_dir = Path(light[NORMALIZED_HEADER_FILENAME]).parent
+            date_dir = get_date_directory(lights_dir)
+            date_dirs.add(date_dir)
 
-        # Ensure we have a tracking set for this DATE directory
-        if date_dir not in processed_masters:
-            processed_masters[date_dir] = set()
+        # Copy masters to each DATE directory
+        for date_dir in date_dirs:
+            # Ensure we have a tracking set for this DATE directory
+            if date_dir not in processed_masters:
+                processed_masters[date_dir] = set()
 
-        # Copy dark (if found and not already copied)
-        if dark:
-            dark_name = Path(dark["filepath"]).name
-            if dark_name not in processed_masters[date_dir]:
-                if copy_master_to_blink(dark, date_dir, dry_run):
-                    stats["darks_copied"] += 1
-                    processed_masters[date_dir].add(dark_name)
-        else:
+            # Copy dark (if found and not already copied)
+            if dark:
+                dark_name = Path(dark[NORMALIZED_HEADER_FILENAME]).name
+                if dark_name not in processed_masters[date_dir]:
+                    if copy_master_to_blink(dark, date_dir, dry_run):
+                        stats["darks_copied"] += 1
+                        processed_masters[date_dir].add(dark_name)
+
+            # Copy bias (if needed and found and not already copied)
+            if bias:
+                bias_name = Path(bias[NORMALIZED_HEADER_FILENAME]).name
+                if bias_name not in processed_masters[date_dir]:
+                    if copy_master_to_blink(bias, date_dir, dry_run):
+                        stats["biases_copied"] += 1
+                        processed_masters[date_dir].add(bias_name)
+
+            # Copy flat (if found and not already copied)
+            if flat:
+                flat_name = Path(flat[NORMALIZED_HEADER_FILENAME]).name
+                if flat_name not in processed_masters[date_dir]:
+                    if copy_master_to_blink(flat, date_dir, dry_run):
+                        stats["flats_copied"] += 1
+                        processed_masters[date_dir].add(flat_name)
+
+        # Report missing masters once per config (not per date_dir)
+        if not dark:
             stats["darks_missing"] += 1
             logger.warning(
-                f"Missing dark for exposure={light_metadata.get(NORMALIZED_HEADER_EXPOSURESECONDS)}s"
+                f"Missing dark for exposure={light_metadata.get(NORMALIZED_HEADER_EXPOSURESECONDS)}s "
+                f"(run with --debug for search details)"
             )
 
-        # Copy bias (if needed and found and not already copied)
-        if bias:
-            bias_name = Path(bias["filepath"]).name
-            if bias_name not in processed_masters[date_dir]:
-                if copy_master_to_blink(bias, date_dir, dry_run):
-                    stats["biases_copied"] += 1
-                    processed_masters[date_dir].add(bias_name)
-
-        # Copy flat (if found and not already copied)
-        if flat:
-            flat_name = Path(flat["filepath"]).name
-            if flat_name not in processed_masters[date_dir]:
-                if copy_master_to_blink(flat, date_dir, dry_run):
-                    stats["flats_copied"] += 1
-                    processed_masters[date_dir].add(flat_name)
-        else:
+        if not flat:
             stats["flats_missing"] += 1
             logger.warning(
                 f"Missing flat for filter={light_metadata.get(NORMALIZED_HEADER_FILTER)}, "
-                f"date={light_metadata.get(NORMALIZED_HEADER_DATE)}"
+                f"date={light_metadata.get(NORMALIZED_HEADER_DATE)} "
+                f"(run with --debug for search details)"
             )
 
     return stats

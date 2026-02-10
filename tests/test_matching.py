@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from ap_common.constants import (
+    NORMALIZED_HEADER_FILENAME,
     NORMALIZED_HEADER_CAMERA,
     NORMALIZED_HEADER_GAIN,
     NORMALIZED_HEADER_OFFSET,
@@ -54,12 +55,12 @@ class TestMatching(unittest.TestCase):
     @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
     def test_find_matching_dark_exact_exposure(self, mock_get_metadata):
         """Test finding dark with exact exposure match."""
-        mock_get_metadata.return_value = [
-            {
+        mock_get_metadata.return_value = {
+            "/test/library/dark_300s.xisf": {
                 NORMALIZED_HEADER_EXPOSURESECONDS: "300",
-                "filepath": "/test/library/dark_300s.xisf",
+                NORMALIZED_HEADER_FILENAME: "/test/library/dark_300s.xisf",
             }
-        ]
+        }
 
         result = find_matching_dark(self.library_dir, self.light_metadata)
 
@@ -69,16 +70,16 @@ class TestMatching(unittest.TestCase):
     @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
     def test_find_matching_dark_shorter_exposure(self, mock_get_metadata):
         """Test finding dark with shorter exposure (no exact match)."""
-        mock_get_metadata.return_value = [
-            {
+        mock_get_metadata.return_value = {
+            "/test/library/dark_120s.xisf": {
                 NORMALIZED_HEADER_EXPOSURESECONDS: "120",
-                "filepath": "/test/library/dark_120s.xisf",
+                NORMALIZED_HEADER_FILENAME: "/test/library/dark_120s.xisf",
             },
-            {
+            "/test/library/dark_60s.xisf": {
                 NORMALIZED_HEADER_EXPOSURESECONDS: "60",
-                "filepath": "/test/library/dark_60s.xisf",
+                NORMALIZED_HEADER_FILENAME: "/test/library/dark_60s.xisf",
             },
-        ]
+        }
 
         result = find_matching_dark(self.library_dir, self.light_metadata)
 
@@ -89,7 +90,7 @@ class TestMatching(unittest.TestCase):
     @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
     def test_find_matching_dark_no_match(self, mock_get_metadata):
         """Test when no matching dark found."""
-        mock_get_metadata.return_value = []
+        mock_get_metadata.return_value = {}
 
         result = find_matching_dark(self.library_dir, self.light_metadata)
 
@@ -98,17 +99,21 @@ class TestMatching(unittest.TestCase):
     @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
     def test_find_matching_bias(self, mock_get_metadata):
         """Test finding matching bias."""
-        mock_get_metadata.return_value = [{"filepath": "/test/library/bias.xisf"}]
+        mock_get_metadata.return_value = {
+            "/test/library/bias.xisf": {
+                NORMALIZED_HEADER_FILENAME: "/test/library/bias.xisf"
+            }
+        }
 
         result = find_matching_bias(self.library_dir, self.light_metadata)
 
         self.assertIsNotNone(result)
-        self.assertEqual(result["filepath"], "/test/library/bias.xisf")
+        self.assertEqual(result[NORMALIZED_HEADER_FILENAME], "/test/library/bias.xisf")
 
     @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
     def test_find_matching_bias_no_match(self, mock_get_metadata):
         """Test when no matching bias found."""
-        mock_get_metadata.return_value = []
+        mock_get_metadata.return_value = {}
 
         result = find_matching_bias(self.library_dir, self.light_metadata)
 
@@ -117,17 +122,23 @@ class TestMatching(unittest.TestCase):
     @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
     def test_find_matching_flat(self, mock_get_metadata):
         """Test finding matching flat."""
-        mock_get_metadata.return_value = [{"filepath": "/test/library/flat_ha.xisf"}]
+        mock_get_metadata.return_value = {
+            "/test/library/flat_ha.xisf": {
+                NORMALIZED_HEADER_FILENAME: "/test/library/flat_ha.xisf"
+            }
+        }
 
         result = find_matching_flat(self.library_dir, self.light_metadata)
 
         self.assertIsNotNone(result)
-        self.assertEqual(result["filepath"], "/test/library/flat_ha.xisf")
+        self.assertEqual(
+            result[NORMALIZED_HEADER_FILENAME], "/test/library/flat_ha.xisf"
+        )
 
     @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
     def test_find_matching_flat_no_match(self, mock_get_metadata):
         """Test when no matching flat found."""
-        mock_get_metadata.return_value = []
+        mock_get_metadata.return_value = {}
 
         result = find_matching_flat(self.library_dir, self.light_metadata)
 
@@ -142,9 +153,9 @@ class TestMatching(unittest.TestCase):
         """Test determining required masters with exact dark match."""
         mock_dark.return_value = {
             NORMALIZED_HEADER_EXPOSURESECONDS: "300",
-            "filepath": "/test/dark.xisf",
+            NORMALIZED_HEADER_FILENAME: "/test/dark.xisf",
         }
-        mock_flat.return_value = {"filepath": "/test/flat.xisf"}
+        mock_flat.return_value = {NORMALIZED_HEADER_FILENAME: "/test/flat.xisf"}
 
         masters = determine_required_masters(self.library_dir, self.light_metadata)
 
@@ -163,10 +174,10 @@ class TestMatching(unittest.TestCase):
         """Test determining required masters with shorter dark and bias."""
         mock_dark.return_value = {
             NORMALIZED_HEADER_EXPOSURESECONDS: "120",
-            "filepath": "/test/dark.xisf",
+            NORMALIZED_HEADER_FILENAME: "/test/dark.xisf",
         }
-        mock_bias.return_value = {"filepath": "/test/bias.xisf"}
-        mock_flat.return_value = {"filepath": "/test/flat.xisf"}
+        mock_bias.return_value = {NORMALIZED_HEADER_FILENAME: "/test/bias.xisf"}
+        mock_flat.return_value = {NORMALIZED_HEADER_FILENAME: "/test/flat.xisf"}
 
         masters = determine_required_masters(self.library_dir, self.light_metadata)
 
@@ -185,10 +196,10 @@ class TestMatching(unittest.TestCase):
         """Test determining required masters with shorter dark but no bias."""
         mock_dark.return_value = {
             NORMALIZED_HEADER_EXPOSURESECONDS: "120",
-            "filepath": "/test/dark.xisf",
+            NORMALIZED_HEADER_FILENAME: "/test/dark.xisf",
         }
         mock_bias.return_value = None  # No bias found
-        mock_flat.return_value = {"filepath": "/test/flat.xisf"}
+        mock_flat.return_value = {NORMALIZED_HEADER_FILENAME: "/test/flat.xisf"}
 
         masters = determine_required_masters(self.library_dir, self.light_metadata)
 

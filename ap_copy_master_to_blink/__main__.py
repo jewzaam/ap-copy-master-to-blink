@@ -141,12 +141,11 @@ Examples:
     args = parser.parse_args()
 
     # Setup logging
-    log_level = "DEBUG" if args.debug else "INFO"
-    setup_logging(log_level)
+    setup_logging(name="ap_copy_master_to_blink", debug=args.debug, quiet=args.quiet)
 
     # Resolve paths (support environment variables)
-    library_dir = resolve_path(replace_env_vars(args.library_dir))
-    blink_dir = resolve_path(replace_env_vars(args.blink_dir))
+    library_dir = Path(resolve_path(replace_env_vars(args.library_dir)))
+    blink_dir = Path(resolve_path(replace_env_vars(args.blink_dir)))
 
     # Validate directories exist
     is_valid, error_message = validate_directories(library_dir, blink_dir)

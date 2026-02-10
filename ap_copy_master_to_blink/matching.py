@@ -26,6 +26,8 @@ from ap_common.constants import (
     NORMALIZED_HEADER_FOCALLEN,
 )
 
+from .config import SUPPORTED_EXTENSIONS
+
 logger = logging.getLogger(__name__)
 
 
@@ -63,18 +65,43 @@ def find_matching_dark(
             NORMALIZED_HEADER_READOUTMODE
         ),
     }
+    # Remove None values from filter criteria (filter_metadata rejects None)
+    filter_criteria = {k: v for k, v in filter_criteria.items() if v is not None}
+
+    logger.debug(f"Searching for dark with criteria: {filter_criteria}")
+    logger.debug(f"Target exposure: {exposure}s")
 
     # Search for all matching darks (any exposure)
-    darks = get_filtered_metadata(library_dir, filter_criteria)
+    patterns = [rf".*\{ext}$" for ext in SUPPORTED_EXTENSIONS]
+    darks = get_filtered_metadata(
+        dirs=[str(library_dir)],
+        filters=filter_criteria,
+        profileFromPath=False,
+        patterns=patterns,
+        recursive=True,
+    )
 
     if not darks:
-        logger.debug(f"No matching darks found for criteria: {filter_criteria}")
+        logger.debug("No darks found in library matching criteria")
         return None
+
+    logger.debug(
+        f"Found {len(darks)} darks in library with matching camera/gain/offset/temp/readoutmode"
+    )
+
+    # Convert dict to list of metadata dicts
+    darks_list = list(darks.values())
+
+    # Log available exposures
+    available_exposures = sorted(
+        [float(d.get(NORMALIZED_HEADER_EXPOSURESECONDS, -1)) for d in darks_list]
+    )
+    logger.debug(f"Available dark exposures: {available_exposures}")
 
     # Try exact exposure match first
     exact_matches = [
         d
-        for d in darks
+        for d in darks_list
         if float(d.get(NORMALIZED_HEADER_EXPOSURESECONDS, -1)) == exposure
     ]
 
@@ -87,10 +114,12 @@ def find_matching_dark(
         logger.debug(f"Found exact dark exposure match: {exposure}s")
         return exact_matches[0]
 
+    logger.debug(f"No exact exposure match for {exposure}s, looking for shorter dark")
+
     # No exact match - find longest dark exposure < light exposure
     shorter_darks = [
         d
-        for d in darks
+        for d in darks_list
         if float(d.get(NORMALIZED_HEADER_EXPOSURESECONDS, -1)) < exposure
     ]
 
@@ -101,13 +130,16 @@ def find_matching_dark(
             reverse=True,
         )
         best_dark = shorter_darks[0]
+        best_exposure = float(best_dark.get(NORMALIZED_HEADER_EXPOSURESECONDS, -1))
         logger.debug(
-            f"Found shorter dark exposure: {best_dark.get(NORMALIZED_HEADER_EXPOSURESECONDS)}s "
-            f"for light exposure: {exposure}s"
+            f"Found shorter dark exposure: {best_exposure}s "
+            f"for light exposure: {exposure}s (will require bias)"
         )
         return best_dark
 
-    logger.debug(f"No suitable dark found for exposure {exposure}s")
+    logger.debug(
+        f"No suitable dark found for exposure {exposure}s (all available darks have longer exposures)"
+    )
     return None
 
 
@@ -135,18 +167,31 @@ def find_matching_bias(
             NORMALIZED_HEADER_READOUTMODE
         ),
     }
+    # Remove None values from filter criteria (filter_metadata rejects None)
+    filter_criteria = {k: v for k, v in filter_criteria.items() if v is not None}
 
-    biases = get_filtered_metadata(library_dir, filter_criteria)
+    logger.debug(f"Searching for bias with criteria: {filter_criteria}")
+
+    patterns = [rf".*\{ext}$" for ext in SUPPORTED_EXTENSIONS]
+    biases = get_filtered_metadata(
+        dirs=[str(library_dir)],
+        filters=filter_criteria,
+        profileFromPath=False,
+        patterns=patterns,
+        recursive=True,
+    )
 
     if biases:
-        if len(biases) > 1:
+        # Convert dict to list of metadata dicts
+        biases_list = list(biases.values())
+        if len(biases_list) > 1:
             logger.warning(
-                f"Found {len(biases)} matching bias frames, using first match"
+                f"Found {len(biases_list)} matching bias frames, using first match"
             )
-        logger.debug(f"Found matching bias for criteria: {filter_criteria}")
-        return biases[0]
+        logger.debug("Found matching bias")
+        return biases_list[0]
 
-    logger.debug(f"No matching bias found for criteria: {filter_criteria}")
+    logger.debug("No bias found in library matching criteria")
     return None
 
 
@@ -190,23 +235,35 @@ def find_matching_flat(
             NORMALIZED_HEADER_DATE
         ),  # Exact match required
     }
+    # Remove None values from filter criteria (filter_metadata rejects None)
+    filter_criteria = {k: v for k, v in filter_criteria.items() if v is not None}
 
-    flats = get_filtered_metadata(library_dir, filter_criteria)
+    logger.debug(f"Searching for flat with criteria: {filter_criteria}")
+
+    patterns = [rf".*\{ext}$" for ext in SUPPORTED_EXTENSIONS]
+    flats = get_filtered_metadata(
+        dirs=[str(library_dir)],
+        filters=filter_criteria,
+        profileFromPath=False,
+        patterns=patterns,
+        recursive=True,
+    )
 
     if flats:
-        if len(flats) > 1:
+        # Convert dict to list of metadata dicts
+        flats_list = list(flats.values())
+        if len(flats_list) > 1:
             logger.warning(
-                f"Found {len(flats)} matching flats for date {light_metadata.get(NORMALIZED_HEADER_DATE)} "
+                f"Found {len(flats_list)} matching flats for date {light_metadata.get(NORMALIZED_HEADER_DATE)} "
                 f"and filter {light_metadata.get(NORMALIZED_HEADER_FILTER)}, using first match"
             )
-        logger.debug(
-            f"Found matching flat for date: {light_metadata.get(NORMALIZED_HEADER_DATE)}"
-        )
-        return flats[0]
+        logger.debug("Found matching flat")
+        return flats_list[0]
 
     logger.debug(
-        f"No matching flat found for date: {light_metadata.get(NORMALIZED_HEADER_DATE)} "
-        f"and filter: {light_metadata.get(NORMALIZED_HEADER_FILTER)}"
+        f"No flat found in library matching criteria "
+        f"(date={light_metadata.get(NORMALIZED_HEADER_DATE)}, "
+        f"filter={light_metadata.get(NORMALIZED_HEADER_FILTER)})"
     )
     return None
 
@@ -228,6 +285,8 @@ def determine_required_masters(
         - TYPE_MASTER_BIAS: Bias metadata dict or None
         - TYPE_MASTER_FLAT: Flat metadata dict or None
     """
+    logger.debug("Determining required masters for light frame")
+
     dark = find_matching_dark(library_dir, light_metadata)
     bias = None
     flat = find_matching_flat(library_dir, light_metadata)
@@ -241,6 +300,9 @@ def determine_required_masters(
 
         if dark_exposure < light_exposure:
             # Shorter dark - need bias
+            logger.debug(
+                f"Dark exposure ({dark_exposure}s) < light exposure ({light_exposure}s), bias required"
+            )
             bias = find_matching_bias(library_dir, light_metadata)
             if not bias:
                 # No bias found - cannot use this dark
@@ -249,6 +311,10 @@ def determine_required_masters(
                     f"for light exposure ({light_exposure}s) - cannot use dark"
                 )
                 dark = None
+        else:
+            logger.debug(
+                f"Dark exposure ({dark_exposure}s) matches light exposure, no bias required"
+            )
 
     return {
         TYPE_MASTER_DARK: dark,
