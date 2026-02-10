@@ -72,15 +72,10 @@ def print_summary(stats: Dict[str, int]) -> None:
     print(f"\n{'='*70}")
     print("Summary")
     print(f"{'='*70}")
-    print(f"Unique configurations processed: {stats['configs_processed']}")
-    print("\nMasters copied:")
-    print(f"  Biases: {stats['biases_copied']}")
-    print(f"  Darks:  {stats['darks_copied']}")
-    print(f"  Flats:  {stats['flats_copied']}")
-    print("\nMissing masters:")
-    print(f"  Biases: {stats['biases_missing']} (only needed for exposure mismatch)")
-    print(f"  Darks:  {stats['darks_missing']}")
-    print(f"  Flats:  {stats['flats_missing']}")
+    print(f"Configurations: {stats['configs_processed']}")
+    print(f"Biases: {stats['biases_present']} of {stats['biases_needed']}")
+    print(f"Darks:  {stats['darks_present']} of {stats['darks_needed']}")
+    print(f"Flats:  {stats['flats_present']} of {stats['flats_needed']}")
     print(f"{'='*70}\n")
 
 
@@ -141,12 +136,11 @@ Examples:
     args = parser.parse_args()
 
     # Setup logging
-    log_level = "DEBUG" if args.debug else "INFO"
-    setup_logging(log_level)
+    setup_logging(name="ap_copy_master_to_blink", debug=args.debug, quiet=args.quiet)
 
     # Resolve paths (support environment variables)
-    library_dir = resolve_path(replace_env_vars(args.library_dir))
-    blink_dir = resolve_path(replace_env_vars(args.blink_dir))
+    library_dir = Path(resolve_path(replace_env_vars(args.library_dir)))
+    blink_dir = Path(resolve_path(replace_env_vars(args.blink_dir)))
 
     # Validate directories exist
     is_valid, error_message = validate_directories(library_dir, blink_dir)
@@ -159,14 +153,19 @@ Examples:
         print_header(library_dir, blink_dir, args.dryrun)
 
     # Process blink directory
-    stats = process_blink_directory(library_dir, blink_dir, dry_run=args.dryrun)
+    stats = process_blink_directory(
+        library_dir, blink_dir, dry_run=args.dryrun, quiet=args.quiet
+    )
 
     # Print summary
     if not args.quiet:
         print_summary(stats)
 
-    # Return non-zero if any masters were missing
-    if stats["darks_missing"] > 0 or stats["flats_missing"] > 0:
+    # Return non-zero if any masters are missing
+    darks_missing = stats["darks_needed"] - stats["darks_present"]
+    flats_missing = stats["flats_needed"] - stats["flats_present"]
+
+    if darks_missing > 0 or flats_missing > 0:
         if not args.quiet:
             print(
                 "Warning: Some master frames are missing. Check logs above for details."

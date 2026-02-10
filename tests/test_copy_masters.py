@@ -30,6 +30,7 @@ from ap_common.constants import (
     NORMALIZED_HEADER_EXPOSURESECONDS,
     NORMALIZED_HEADER_FILTER,
     NORMALIZED_HEADER_DATE,
+    NORMALIZED_HEADER_FILENAME,
     TYPE_MASTER_DARK,
     TYPE_MASTER_BIAS,
     TYPE_MASTER_FLAT,
@@ -60,23 +61,18 @@ class TestCopyMasters(unittest.TestCase):
 
         self.assertEqual(result.name, "DATE_2024-01-15")
 
-    @patch("ap_copy_master_to_blink.copy_masters.get_filenames")
     @patch("ap_copy_master_to_blink.copy_masters.get_metadata")
-    def test_scan_blink_directories(self, mock_get_metadata, mock_get_filenames):
+    def test_scan_blink_directories(self, mock_get_metadata):
         """Test scanning blink directories for light frames."""
-        mock_get_filenames.return_value = [
-            Path("/blink/light1.fits"),
-            Path("/blink/light2.fits"),
-        ]
-        mock_get_metadata.return_value = [
-            {"filepath": "/blink/light1.fits"},
-            {"filepath": "/blink/light2.fits"},
-        ]
+        # get_metadata returns a dict of {filename: metadata}
+        mock_get_metadata.return_value = {
+            "/blink/light1.fits": {NORMALIZED_HEADER_FILENAME: "/blink/light1.fits"},
+            "/blink/light2.fits": {NORMALIZED_HEADER_FILENAME: "/blink/light2.fits"},
+        }
 
         result = scan_blink_directories(Path("/blink"))
 
         self.assertEqual(len(result), 2)
-        mock_get_filenames.assert_called_once()
         mock_get_metadata.assert_called_once()
 
     def test_group_lights_by_config(self):
@@ -130,7 +126,7 @@ class TestCopyMasters(unittest.TestCase):
     @patch("ap_copy_master_to_blink.copy_masters.copy_file")
     def test_copy_master_to_blink_new_file(self, mock_copy_file):
         """Test copying master when file doesn't exist."""
-        master_metadata = {"filepath": "/library/dark.xisf"}
+        master_metadata = {NORMALIZED_HEADER_FILENAME: "/library/dark.xisf"}
         dest_dir = Path("/blink/DATE_2024-01-15")
 
         with patch("pathlib.Path.exists", return_value=False):
@@ -141,7 +137,7 @@ class TestCopyMasters(unittest.TestCase):
 
     def test_copy_master_to_blink_existing_file(self):
         """Test skipping copy when file already exists."""
-        master_metadata = {"filepath": "/library/dark.xisf"}
+        master_metadata = {NORMALIZED_HEADER_FILENAME: "/library/dark.xisf"}
         dest_dir = Path("/blink/DATE_2024-01-15")
 
         with patch("pathlib.Path.exists", return_value=True):
@@ -151,7 +147,7 @@ class TestCopyMasters(unittest.TestCase):
 
     def test_copy_master_to_blink_dry_run(self):
         """Test dry-run mode doesn't copy files."""
-        master_metadata = {"filepath": "/library/dark.xisf"}
+        master_metadata = {NORMALIZED_HEADER_FILENAME: "/library/dark.xisf"}
         dest_dir = Path("/blink/DATE_2024-01-15")
 
         with patch("pathlib.Path.exists", return_value=False):
@@ -187,7 +183,7 @@ class TestCopyMasters(unittest.TestCase):
         """Test processing with all master types found."""
         # Mock light metadata
         light_metadata = {
-            "filepath": "/blink/M31/DATE_2024-01-15/FILTER_Ha/light.fits",
+            NORMALIZED_HEADER_FILENAME: "/blink/M31/DATE_2024-01-15/FILTER_Ha/light.fits",
             NORMALIZED_HEADER_CAMERA: "ASI2600MM",
             NORMALIZED_HEADER_GAIN: "100",
             NORMALIZED_HEADER_OFFSET: "50",
@@ -203,9 +199,9 @@ class TestCopyMasters(unittest.TestCase):
         mock_get_date.return_value = Path("/blink/M31/DATE_2024-01-15")
 
         # Mock all masters found
-        dark = {"filepath": "/library/dark.xisf"}
-        bias = {"filepath": "/library/bias.xisf"}
-        flat = {"filepath": "/library/flat.xisf"}
+        dark = {NORMALIZED_HEADER_FILENAME: "/library/dark.xisf"}
+        bias = {NORMALIZED_HEADER_FILENAME: "/library/bias.xisf"}
+        flat = {NORMALIZED_HEADER_FILENAME: "/library/flat.xisf"}
         mock_determine.return_value = {
             TYPE_MASTER_DARK: dark,
             TYPE_MASTER_BIAS: bias,
@@ -218,11 +214,12 @@ class TestCopyMasters(unittest.TestCase):
         stats = process_blink_directory(Path("/library"), Path("/blink"), dry_run=False)
 
         self.assertEqual(stats["configs_processed"], 1)
-        self.assertEqual(stats["darks_copied"], 1)
-        self.assertEqual(stats["biases_copied"], 1)
-        self.assertEqual(stats["flats_copied"], 1)
-        self.assertEqual(stats["darks_missing"], 0)
-        self.assertEqual(stats["flats_missing"], 0)
+        self.assertEqual(stats["darks_needed"], 1)
+        self.assertEqual(stats["darks_present"], 1)
+        self.assertEqual(stats["biases_needed"], 1)
+        self.assertEqual(stats["biases_present"], 1)
+        self.assertEqual(stats["flats_needed"], 1)
+        self.assertEqual(stats["flats_present"], 1)
 
     @patch("ap_copy_master_to_blink.copy_masters.scan_blink_directories")
     @patch("ap_copy_master_to_blink.copy_masters.group_lights_by_config")
@@ -235,7 +232,7 @@ class TestCopyMasters(unittest.TestCase):
         """Test processing with missing masters."""
         # Mock light metadata
         light_metadata = {
-            "filepath": "/blink/M31/DATE_2024-01-15/FILTER_Ha/light.fits",
+            NORMALIZED_HEADER_FILENAME: "/blink/M31/DATE_2024-01-15/FILTER_Ha/light.fits",
             NORMALIZED_HEADER_CAMERA: "ASI2600MM",
             NORMALIZED_HEADER_GAIN: "100",
             NORMALIZED_HEADER_OFFSET: "50",
@@ -260,11 +257,12 @@ class TestCopyMasters(unittest.TestCase):
         stats = process_blink_directory(Path("/library"), Path("/blink"), dry_run=False)
 
         self.assertEqual(stats["configs_processed"], 1)
-        self.assertEqual(stats["darks_copied"], 0)
-        self.assertEqual(stats["biases_copied"], 0)
-        self.assertEqual(stats["flats_copied"], 0)
-        self.assertEqual(stats["darks_missing"], 1)
-        self.assertEqual(stats["flats_missing"], 1)
+        self.assertEqual(stats["darks_needed"], 1)
+        self.assertEqual(stats["darks_present"], 0)
+        self.assertEqual(stats["biases_needed"], 0)
+        self.assertEqual(stats["biases_present"], 0)
+        self.assertEqual(stats["flats_needed"], 1)
+        self.assertEqual(stats["flats_present"], 0)
 
 
 class TestCLIFunctions(unittest.TestCase):
@@ -332,48 +330,363 @@ class TestCLIFunctions(unittest.TestCase):
         """Test summary printing."""
         stats = {
             "configs_processed": 2,
-            "biases_copied": 1,
-            "darks_copied": 2,
-            "flats_copied": 3,
-            "biases_missing": 0,
-            "darks_missing": 1,
-            "flats_missing": 0,
+            "darks_needed": 3,
+            "darks_present": 2,
+            "biases_needed": 1,
+            "biases_present": 1,
+            "flats_needed": 3,
+            "flats_present": 3,
         }
 
         print_summary(stats)
 
         output = mock_stdout.getvalue()
         self.assertIn("Summary", output)
-        self.assertIn("Unique configurations processed: 2", output)
-        self.assertIn("Biases: 1", output)
-        self.assertIn("Darks:  2", output)
-        self.assertIn("Flats:  3", output)
-        self.assertIn("Darks:  1", output)
+        self.assertIn("Configurations: 2", output)
+        self.assertIn("Darks:  2 of 3", output)
+        self.assertIn("Biases: 1 of 1", output)
+        self.assertIn("Flats:  3 of 3", output)
 
     @patch("sys.stdout", new_callable=StringIO)
     def test_print_summary_order(self, mock_stdout):
         """Test that summary prints in bias, dark, flat order."""
         stats = {
             "configs_processed": 1,
-            "biases_copied": 1,
-            "darks_copied": 1,
-            "flats_copied": 1,
-            "biases_missing": 0,
-            "darks_missing": 0,
-            "flats_missing": 0,
+            "darks_needed": 1,
+            "darks_present": 1,
+            "biases_needed": 1,
+            "biases_present": 1,
+            "flats_needed": 1,
+            "flats_present": 1,
         }
 
         print_summary(stats)
 
         output = mock_stdout.getvalue()
         # Find positions of each type in output
-        bias_pos = output.find("Biases:")
         dark_pos = output.find("Darks:")
+        bias_pos = output.find("Biases:")
         flat_pos = output.find("Flats:")
 
         # Verify order: bias before dark before flat
         self.assertLess(bias_pos, dark_pos)
         self.assertLess(dark_pos, flat_pos)
+
+
+class TestIntegration(unittest.TestCase):
+    """Integration tests that call real functions without mocking."""
+
+    def test_process_blink_directory_uses_filename_key(self):
+        """Test process_blink_directory uses correct 'filename' key.
+
+        Regression test for bug where code used 'filepath' key
+        but metadata uses 'filename' (NORMALIZED_HEADER_FILENAME).
+        """
+        import tempfile
+        from ap_copy_master_to_blink.copy_masters import process_blink_directory
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            library_dir = Path(tmpdir) / "library"
+            blink_dir = Path(tmpdir) / "blink"
+            library_dir.mkdir()
+            blink_dir.mkdir()
+
+            # Create a fake light file (won't be valid FITS but that's okay)
+            light_file = blink_dir / "light1.fits"
+            light_file.write_text("fake fits")
+
+            # This should not raise KeyError: 'filepath'
+            try:
+                stats = process_blink_directory(library_dir, blink_dir, dry_run=True)
+                # We expect missing masters but no KeyError
+                self.assertIsInstance(stats, dict)
+            except KeyError as e:
+                if NORMALIZED_HEADER_FILENAME in str(e):
+                    self.fail(f"Code uses 'filepath' instead of 'filename': {e}")
+                raise
+            except OSError:
+                # FITS parsing errors are expected with fake files
+                pass
+
+
+class TestIntegrationOld(unittest.TestCase):
+    """Integration tests that call real functions without mocking."""
+
+    @patch("ap_copy_master_to_blink.copy_masters.determine_required_masters")
+    @patch("ap_copy_master_to_blink.copy_masters.copy_master_to_blink")
+    def test_copies_to_all_target_directories_in_group(
+        self, mock_copy_master, mock_determine
+    ):
+        """Test that masters are copied to ALL target directories with same config.
+
+        Regression test for bug where lights from multiple targets with the same
+        calibration config were grouped together, but masters were only copied to
+        the first target's directory.
+        """
+        from ap_copy_master_to_blink.copy_masters import process_blink_directory
+
+        # Two targets, both with H filter 300s exposure
+        # Should copy masters to BOTH target directories
+        mock_scan_data = [
+            {
+                NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                NORMALIZED_HEADER_GAIN: "100",
+                NORMALIZED_HEADER_OFFSET: "50",
+                NORMALIZED_HEADER_SETTEMP: "-10",
+                NORMALIZED_HEADER_READOUTMODE: "0",
+                NORMALIZED_HEADER_EXPOSURESECONDS: "300",
+                NORMALIZED_HEADER_FILTER: "H",
+                NORMALIZED_HEADER_DATE: "2026-02-07",
+                NORMALIZED_HEADER_FILENAME: "/blink/Target1/DATE_2026-02-07/FILTER_H/light1.xisf",
+            },
+            {
+                NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                NORMALIZED_HEADER_GAIN: "100",
+                NORMALIZED_HEADER_OFFSET: "50",
+                NORMALIZED_HEADER_SETTEMP: "-10",
+                NORMALIZED_HEADER_READOUTMODE: "0",
+                NORMALIZED_HEADER_EXPOSURESECONDS: "300",
+                NORMALIZED_HEADER_FILTER: "H",
+                NORMALIZED_HEADER_DATE: "2026-02-07",
+                NORMALIZED_HEADER_FILENAME: "/blink/Target2/DATE_2026-02-07/FILTER_H/light2.xisf",
+            },
+        ]
+
+        from ap_common.constants import (
+            TYPE_MASTER_DARK,
+            TYPE_MASTER_BIAS,
+            TYPE_MASTER_FLAT,
+        )
+
+        mock_masters = {
+            TYPE_MASTER_DARK: {NORMALIZED_HEADER_FILENAME: "/library/dark.xisf"},
+            TYPE_MASTER_BIAS: None,
+            TYPE_MASTER_FLAT: {NORMALIZED_HEADER_FILENAME: "/library/flat.xisf"},
+        }
+        mock_determine.return_value = mock_masters
+        mock_copy_master.return_value = True
+
+        with patch(
+            "ap_copy_master_to_blink.copy_masters.scan_blink_directories",
+            return_value=mock_scan_data,
+        ):
+            process_blink_directory(Path("/library"), Path("/blink"), dry_run=False)
+
+        # Should have called copy_master_to_blink for both directories
+        # 2 targets * 2 masters (dark + flat) = 4 copies
+        self.assertEqual(mock_copy_master.call_count, 4)
+
+        # Verify it was called with both target directories
+        # Normalize paths to use forward slashes for comparison
+        called_dirs = {
+            str(call[0][1]).replace("\\", "/")
+            for call in mock_copy_master.call_args_list
+        }
+        self.assertIn("/blink/Target1/DATE_2026-02-07", called_dirs)
+        self.assertIn("/blink/Target2/DATE_2026-02-07", called_dirs)
+
+    def test_copy_file_receives_strings_not_paths(self):
+        """Test that copy_file is called with strings, not Path objects.
+
+        Regression test for bug where Path objects were passed to copy_file
+        which expects strings.
+        """
+        import tempfile
+        from ap_copy_master_to_blink.copy_masters import copy_master_to_blink
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create source file
+            library_dir = Path(tmpdir) / "library"
+            library_dir.mkdir()
+            source_file = library_dir / "masterDark.xisf"
+            source_file.write_text("fake xisf")
+
+            # Create dest directory
+            dest_dir = Path(tmpdir) / "blink" / "DATE_2024-01-15"
+            dest_dir.mkdir(parents=True)
+
+            master_metadata = {NORMALIZED_HEADER_FILENAME: str(source_file)}
+
+            # This should not raise AttributeError: 'WindowsPath' object has no attribute 'split'
+            try:
+                result = copy_master_to_blink(master_metadata, dest_dir, dry_run=False)
+                self.assertTrue(result)
+                # Verify file was copied
+                dest_file = dest_dir / source_file.name
+                self.assertTrue(dest_file.exists())
+            except AttributeError as e:
+                if "'WindowsPath' object has no attribute 'split'" in str(
+                    e
+                ) or "'PosixPath' object has no attribute 'split'" in str(e):
+                    self.fail(f"copy_file received Path object instead of string: {e}")
+                raise
+
+    @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
+    def test_get_filtered_metadata_returns_dict(self, mock_get_filtered_metadata):
+        """Test that code handles get_filtered_metadata returning dict, not list.
+
+        Regression test for bug where code iterated over darks as if it were
+        a list, but get_filtered_metadata returns a dict mapping filenames to metadata.
+        """
+        from ap_copy_master_to_blink.matching import find_matching_dark
+        from ap_common.constants import (
+            NORMALIZED_HEADER_EXPOSURESECONDS,
+            NORMALIZED_HEADER_FILENAME,
+        )
+
+        # get_filtered_metadata returns a dict mapping filenames to metadata dicts
+        mock_get_filtered_metadata.return_value = {
+            "/test/dark1.xisf": {
+                NORMALIZED_HEADER_EXPOSURESECONDS: "300",
+                NORMALIZED_HEADER_FILENAME: "/test/dark1.xisf",
+            },
+            "/test/dark2.xisf": {
+                NORMALIZED_HEADER_EXPOSURESECONDS: "120",
+                NORMALIZED_HEADER_FILENAME: "/test/dark2.xisf",
+            },
+        }
+
+        light_metadata = {
+            "camera": "TestCamera",
+            "gain": "100",
+            "offset": "50",
+            "settemp": "-10.00",
+            NORMALIZED_HEADER_EXPOSURESECONDS: "300",
+        }
+
+        # This should not raise AttributeError: 'str' object has no attribute 'get'
+        result = find_matching_dark(Path("/test/library"), light_metadata)
+        self.assertIsNotNone(result)
+        self.assertEqual(result[NORMALIZED_HEADER_EXPOSURESECONDS], "300")
+
+    def test_find_matching_dark_integration(self):
+        """Test find_matching_dark with real get_filtered_metadata call.
+
+        Regression test for bug where get_filtered_metadata was called
+        with only (library_dir, filter_criteria) but requires profileFromPath.
+        """
+        import tempfile
+        from ap_copy_master_to_blink.matching import find_matching_dark
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            library_dir = Path(tmpdir) / "library"
+            library_dir.mkdir()
+
+            light_metadata = {
+                NORMALIZED_HEADER_CAMERA: "TestCam",
+                NORMALIZED_HEADER_GAIN: "100",
+                NORMALIZED_HEADER_OFFSET: "10",
+                NORMALIZED_HEADER_SETTEMP: "-10.00",
+                NORMALIZED_HEADER_READOUTMODE: "HighGain",
+                NORMALIZED_HEADER_EXPOSURESECONDS: "60.00",
+            }
+
+            # This should not raise TypeError about missing profileFromPath
+            try:
+                result = find_matching_dark(library_dir, light_metadata)
+                # We expect None because no masters exist in empty directory
+                self.assertIsNone(result)
+            except TypeError as e:
+                if "profileFromPath" in str(e):
+                    self.fail(f"get_filtered_metadata() API mismatch: {e}")
+                raise
+
+    def test_find_matching_dark_with_missing_metadata(self):
+        """Test find_matching_dark handles missing metadata fields.
+
+        Regression test for bug where None values in filter criteria
+        caused ValueError in filter_metadata.
+        """
+        import tempfile
+        from ap_copy_master_to_blink.matching import find_matching_dark
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            library_dir = Path(tmpdir) / "library"
+            library_dir.mkdir()
+
+            # Light metadata with missing readoutmode (None)
+            light_metadata = {
+                NORMALIZED_HEADER_CAMERA: "TestCam",
+                NORMALIZED_HEADER_GAIN: "100",
+                NORMALIZED_HEADER_OFFSET: "10",
+                NORMALIZED_HEADER_SETTEMP: "-10.00",
+                NORMALIZED_HEADER_READOUTMODE: None,  # This causes the bug
+                NORMALIZED_HEADER_EXPOSURESECONDS: "60.00",
+            }
+
+            # This should not raise ValueError about None filter value
+            try:
+                result = find_matching_dark(library_dir, light_metadata)
+                # We expect None because no masters exist
+                self.assertIsNone(result)
+            except ValueError as e:
+                if "has no value 'None'" in str(e):
+                    self.fail(f"filter_metadata() rejects None values: {e}")
+                raise
+
+    def test_scan_blink_directories_integration(self):
+        """Test scan_blink_directories with real get_filenames call.
+
+        This integration test ensures the function signature matches between
+        scan_blink_directories and get_filenames from ap-common.
+
+        Regression test for bugs where:
+        1. get_filenames was called with extensions= parameter (doesn't exist)
+        2. blink_dir was passed as string instead of list to get_filenames
+        """
+        import tempfile
+        import os
+
+        # Create temporary directory structure
+        with tempfile.TemporaryDirectory() as tmpdir:
+            blink_dir = Path(tmpdir) / "blink"
+            blink_dir.mkdir()
+
+            # Create some test files
+            (blink_dir / "light1.fits").write_text("fake fits data")
+            (blink_dir / "light2.xisf").write_text("fake xisf data")
+            (blink_dir / "ignore.txt").write_text("should be ignored")
+
+            # This should not raise TypeError about unexpected keyword argument 'extensions'
+            # or AttributeError about string not having certain attributes
+            try:
+                result = scan_blink_directories(blink_dir)
+                # We expect empty list because files don't have valid metadata
+                # but the function should execute without parameter errors
+                self.assertIsInstance(result, list)
+            except TypeError as e:
+                if "extensions" in str(e) or "got an unexpected keyword" in str(e):
+                    self.fail(f"API mismatch: {e}")
+                raise
+            except OSError as e:
+                # It's okay if FITS parsing fails - we're testing API compatibility, not FITS parsing
+                if "SIMPLE card" not in str(e):
+                    raise
+
+    def test_validate_directories_integration(self):
+        """Test validate_directories requires Path objects, not strings.
+
+        Regression test for bug where resolve_path returns string
+        but validate_directories expected Path objects. The fix was to
+        wrap resolve_path results with Path() in main().
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            library_dir = Path(tmpdir) / "library"
+            blink_dir = Path(tmpdir) / "blink"
+            library_dir.mkdir()
+            blink_dir.mkdir()
+
+            # validate_directories should work with Path objects
+            is_valid, error = validate_directories(library_dir, blink_dir)
+            self.assertTrue(is_valid)
+            self.assertIsNone(error)
+
+            # validate_directories should NOT work with strings (by design)
+            # main() must wrap resolve_path() results with Path()
+            with self.assertRaises(AttributeError):
+                validate_directories(str(library_dir), str(blink_dir))
 
 
 if __name__ == "__main__":
