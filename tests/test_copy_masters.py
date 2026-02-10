@@ -214,11 +214,12 @@ class TestCopyMasters(unittest.TestCase):
         stats = process_blink_directory(Path("/library"), Path("/blink"), dry_run=False)
 
         self.assertEqual(stats["configs_processed"], 1)
-        self.assertEqual(stats["darks_copied"], 1)
-        self.assertEqual(stats["biases_copied"], 1)
-        self.assertEqual(stats["flats_copied"], 1)
-        self.assertEqual(stats["darks_missing"], 0)
-        self.assertEqual(stats["flats_missing"], 0)
+        self.assertEqual(stats["darks_needed"], 1)
+        self.assertEqual(stats["darks_present"], 1)
+        self.assertEqual(stats["biases_needed"], 1)
+        self.assertEqual(stats["biases_present"], 1)
+        self.assertEqual(stats["flats_needed"], 1)
+        self.assertEqual(stats["flats_present"], 1)
 
     @patch("ap_copy_master_to_blink.copy_masters.scan_blink_directories")
     @patch("ap_copy_master_to_blink.copy_masters.group_lights_by_config")
@@ -256,11 +257,12 @@ class TestCopyMasters(unittest.TestCase):
         stats = process_blink_directory(Path("/library"), Path("/blink"), dry_run=False)
 
         self.assertEqual(stats["configs_processed"], 1)
-        self.assertEqual(stats["darks_copied"], 0)
-        self.assertEqual(stats["biases_copied"], 0)
-        self.assertEqual(stats["flats_copied"], 0)
-        self.assertEqual(stats["darks_missing"], 1)
-        self.assertEqual(stats["flats_missing"], 1)
+        self.assertEqual(stats["darks_needed"], 1)
+        self.assertEqual(stats["darks_present"], 0)
+        self.assertEqual(stats["biases_needed"], 0)
+        self.assertEqual(stats["biases_present"], 0)
+        self.assertEqual(stats["flats_needed"], 1)
+        self.assertEqual(stats["flats_present"], 0)
 
 
 class TestCLIFunctions(unittest.TestCase):
@@ -328,43 +330,42 @@ class TestCLIFunctions(unittest.TestCase):
         """Test summary printing."""
         stats = {
             "configs_processed": 2,
-            "biases_copied": 1,
-            "darks_copied": 2,
-            "flats_copied": 3,
-            "biases_missing": 0,
-            "darks_missing": 1,
-            "flats_missing": 0,
+            "darks_needed": 3,
+            "darks_present": 2,
+            "biases_needed": 1,
+            "biases_present": 1,
+            "flats_needed": 3,
+            "flats_present": 3,
         }
 
         print_summary(stats)
 
         output = mock_stdout.getvalue()
         self.assertIn("Summary", output)
-        self.assertIn("Unique configurations processed: 2", output)
-        self.assertIn("Biases: 1", output)
-        self.assertIn("Darks:  2", output)
-        self.assertIn("Flats:  3", output)
-        self.assertIn("Darks:  1", output)
+        self.assertIn("Configurations: 2", output)
+        self.assertIn("Darks:  2 of 3", output)
+        self.assertIn("Biases: 1 of 1", output)
+        self.assertIn("Flats:  3 of 3", output)
 
     @patch("sys.stdout", new_callable=StringIO)
     def test_print_summary_order(self, mock_stdout):
         """Test that summary prints in bias, dark, flat order."""
         stats = {
             "configs_processed": 1,
-            "biases_copied": 1,
-            "darks_copied": 1,
-            "flats_copied": 1,
-            "biases_missing": 0,
-            "darks_missing": 0,
-            "flats_missing": 0,
+            "darks_needed": 1,
+            "darks_present": 1,
+            "biases_needed": 1,
+            "biases_present": 1,
+            "flats_needed": 1,
+            "flats_present": 1,
         }
 
         print_summary(stats)
 
         output = mock_stdout.getvalue()
         # Find positions of each type in output
-        bias_pos = output.find("Biases:")
         dark_pos = output.find("Darks:")
+        bias_pos = output.find("Biases:")
         flat_pos = output.find("Flats:")
 
         # Verify order: bias before dark before flat

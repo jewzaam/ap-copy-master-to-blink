@@ -9,6 +9,7 @@ from typing import Dict, List, Set, Tuple
 import logging
 
 from ap_common import get_metadata, copy_file
+from ap_common.progress import progress_iter
 from ap_common.constants import (
     NORMALIZED_HEADER_CAMERA,
     NORMALIZED_HEADER_GAIN,
@@ -68,17 +69,20 @@ def get_date_directory(lights_dir: Path) -> Path:
     return lights_dir
 
 
-def scan_blink_directories(blink_dir: Path) -> List[Dict[str, str]]:
+def scan_blink_directories(
+    blink_dir: Path, quiet: bool = False
+) -> List[Dict[str, str]]:
     """
     Scan blink directory tree for light frames and read their metadata.
 
     Args:
         blink_dir: Root blink directory to scan
+        quiet: Suppress progress output
 
     Returns:
         List of metadata dictionaries for all light frames found
     """
-    logger.info(f"Scanning blink directory: {blink_dir}")
+    logger.debug(f"Scanning blink directory: {blink_dir}")
 
     # Get metadata for all light frames
     # Convert extensions to regex patterns for get_metadata
@@ -89,19 +93,17 @@ def scan_blink_directories(blink_dir: Path) -> List[Dict[str, str]]:
         patterns=patterns,
         recursive=True,
         required_properties=[],
-        printStatus=False,
+        printStatus=not quiet,
     )
 
     if not metadata:
         logger.warning(f"No light frames found in {blink_dir}")
         return []
 
-    logger.info(f"Found {len(metadata)} light frames")
-
     # Convert metadata dict to list of dicts (get_metadata returns {filename: metadata})
     metadata_list = list(metadata.values())
 
-    logger.info(f"Read metadata for {len(metadata_list)} light frames")
+    logger.debug(f"Found {len(metadata_list)} light frames")
 
     return metadata_list
 
@@ -140,7 +142,7 @@ def group_lights_by_config(
 
         groups[key].append(metadata)
 
-    logger.info(
+    logger.debug(
         f"Grouped {len(metadata_list)} lights into {len(groups)} unique configurations"
     )
 
@@ -171,10 +173,10 @@ def copy_master_to_blink(
         return False
 
     if dry_run:
-        logger.info(f"[DRY-RUN] Would copy: {source_path.name} -> {dest_dir}")
+        logger.debug(f"[DRY-RUN] Would copy: {source_path.name} -> {dest_dir}")
         return True
 
-    logger.info(f"Copying: {source_path.name} -> {dest_dir}")
+    logger.debug(f"Copying: {source_path.name} -> {dest_dir}")
     copy_file(str(source_path), str(dest_path))
     return True
 
@@ -183,6 +185,7 @@ def process_blink_directory(
     library_dir: Path,
     blink_dir: Path,
     dry_run: bool = False,
+    quiet: bool = False,
 ) -> Dict[str, int]:
     """
     Main orchestration logic to copy masters to blink directories.
@@ -191,29 +194,30 @@ def process_blink_directory(
         library_dir: Path to calibration library
         blink_dir: Path to blink directory tree
         dry_run: If True, log actions but don't copy files
+        quiet: Suppress progress output
 
     Returns:
         Dictionary with summary statistics:
-        - darks_copied: Number of darks copied
-        - biases_copied: Number of biases copied
-        - flats_copied: Number of flats copied
-        - darks_missing: Number of unique configs missing darks
-        - biases_missing: Number of unique configs missing biases (when needed)
-        - flats_missing: Number of unique configs missing flats
+        - darks_needed: Number of DATE directories that need darks
+        - darks_present: Number of DATE directories that have darks
+        - biases_needed: Number of DATE directories that need biases
+        - biases_present: Number of DATE directories that have biases
+        - flats_needed: Number of DATE directories that need flats
+        - flats_present: Number of DATE directories that have flats
         - configs_processed: Number of unique calibration configs processed
     """
     stats = {
-        "darks_copied": 0,
-        "biases_copied": 0,
-        "flats_copied": 0,
-        "darks_missing": 0,
-        "biases_missing": 0,
-        "flats_missing": 0,
+        "darks_needed": 0,
+        "darks_present": 0,
+        "biases_needed": 0,
+        "biases_present": 0,
+        "flats_needed": 0,
+        "flats_present": 0,
         "configs_processed": 0,
     }
 
     # Scan for light frames
-    metadata_list = scan_blink_directories(blink_dir)
+    metadata_list = scan_blink_directories(blink_dir, quiet=quiet)
 
     if not metadata_list:
         logger.warning("No light frames found to process")
@@ -223,16 +227,25 @@ def process_blink_directory(
     groups = group_lights_by_config(metadata_list)
     stats["configs_processed"] = len(groups)
 
+    # Collect warnings to print after progress bar
+    warnings = []
+
     # Track which DATE directories we've processed to avoid duplicate copies
     processed_masters: Dict[Path, Set[str]] = {}
 
     # Process each unique configuration
-    for config_key, lights in groups.items():
+    for config_key, lights in progress_iter(
+        groups.items(),
+        desc="Processing configurations",
+        unit="configs",
+        enabled=not quiet,
+        total=len(groups),
+    ):
         # Use first light's metadata as representative for this group
         light_metadata = lights[0]
 
-        logger.info(
-            f"\nProcessing configuration: "
+        logger.debug(
+            f"Processing: "
             f"camera={light_metadata.get(NORMALIZED_HEADER_CAMERA)}, "
             f"gain={light_metadata.get(NORMALIZED_HEADER_GAIN)}, "
             f"exposure={light_metadata.get(NORMALIZED_HEADER_EXPOSURESECONDS)}s, "
@@ -261,43 +274,48 @@ def process_blink_directory(
                 processed_masters[date_dir] = set()
 
             # Copy dark (if found and not already copied)
+            stats["darks_needed"] += 1
             if dark:
                 dark_name = Path(dark[NORMALIZED_HEADER_FILENAME]).name
                 if dark_name not in processed_masters[date_dir]:
-                    if copy_master_to_blink(dark, date_dir, dry_run):
-                        stats["darks_copied"] += 1
-                        processed_masters[date_dir].add(dark_name)
+                    copy_master_to_blink(dark, date_dir, dry_run)
+                    processed_masters[date_dir].add(dark_name)
+                stats["darks_present"] += 1
 
             # Copy bias (if needed and found and not already copied)
             if bias:
+                stats["biases_needed"] += 1
                 bias_name = Path(bias[NORMALIZED_HEADER_FILENAME]).name
                 if bias_name not in processed_masters[date_dir]:
-                    if copy_master_to_blink(bias, date_dir, dry_run):
-                        stats["biases_copied"] += 1
-                        processed_masters[date_dir].add(bias_name)
+                    copy_master_to_blink(bias, date_dir, dry_run)
+                    processed_masters[date_dir].add(bias_name)
+                stats["biases_present"] += 1
 
             # Copy flat (if found and not already copied)
+            stats["flats_needed"] += 1
             if flat:
                 flat_name = Path(flat[NORMALIZED_HEADER_FILENAME]).name
                 if flat_name not in processed_masters[date_dir]:
-                    if copy_master_to_blink(flat, date_dir, dry_run):
-                        stats["flats_copied"] += 1
-                        processed_masters[date_dir].add(flat_name)
+                    copy_master_to_blink(flat, date_dir, dry_run)
+                    processed_masters[date_dir].add(flat_name)
+                stats["flats_present"] += 1
 
-        # Report missing masters once per config (not per date_dir)
+        # Collect missing master warnings (print after progress bar)
         if not dark:
-            stats["darks_missing"] += 1
-            logger.warning(
+            warnings.append(
                 f"Missing dark for exposure={light_metadata.get(NORMALIZED_HEADER_EXPOSURESECONDS)}s "
                 f"(run with --debug for search details)"
             )
 
         if not flat:
-            stats["flats_missing"] += 1
-            logger.warning(
+            warnings.append(
                 f"Missing flat for filter={light_metadata.get(NORMALIZED_HEADER_FILTER)}, "
                 f"date={light_metadata.get(NORMALIZED_HEADER_DATE)} "
                 f"(run with --debug for search details)"
             )
+
+    # Print collected warnings after progress bar completes
+    for warning in warnings:
+        logger.warning(warning)
 
     return stats
