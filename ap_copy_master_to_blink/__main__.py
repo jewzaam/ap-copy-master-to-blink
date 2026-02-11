@@ -87,6 +87,11 @@ def print_summary(stats: Dict[str, int]) -> None:
         f"{plural(stats['date_count'], 'date')}, "
         f"{plural(stats['filter_count'], 'filter')})"
     )
+
+    # CRITICAL: Output order MUST be: Biases, Darks, Flats
+    # CRITICAL: Bias MUST ALWAYS be shown (even if 0 of 0)
+    # This order has regressed multiple times - DO NOT CHANGE without updating tests
+    # See test_print_summary_output_order() in tests/test_copy_masters.py
     print(
         f"Biases: {stats['biases_present']} of {stats['biases_needed']} | "
         f"{status_indicator(stats['biases_present'], stats['biases_needed'])}"
