@@ -781,5 +781,156 @@ class TestIntegrationOld(unittest.TestCase):
                 validate_directories(str(library_dir), str(blink_dir))
 
 
+class TestPrintSummary(unittest.TestCase):
+    """Tests for print_summary function.
+
+    CRITICAL: These tests enforce the required output order and format.
+    The output order has regressed multiple times and must be protected.
+    """
+
+    @patch("sys.stdout", new_callable=StringIO)
+    def test_output_order_is_bias_dark_flat(self, mock_stdout):
+        """Verify output order is ALWAYS: Biases, Darks, Flats.
+
+        CRITICAL: This order must not change. Update this test only if
+        there is an explicit business requirement to change the order.
+        """
+        stats = {
+            "frame_count": 100,
+            "target_count": 3,
+            "date_count": 5,
+            "filter_count": 4,
+            "darks_needed": 10,
+            "darks_present": 8,
+            "flats_needed": 10,
+            "flats_present": 9,
+            "biases_needed": 5,
+            "biases_present": 4,
+        }
+
+        print_summary(stats)
+
+        output = mock_stdout.getvalue()
+        output_lines = output.split("\n")
+
+        # Find the calibration frame lines
+        calibration_lines = [
+            line
+            for line in output_lines
+            if any(frame in line for frame in ["Biases:", "Darks:", "Flats:"])
+        ]
+
+        # CRITICAL: Verify order is Biases, Darks, Flats
+        self.assertEqual(
+            len(calibration_lines),
+            3,
+            f"Expected 3 calibration lines, got {len(calibration_lines)}",
+        )
+        self.assertIn(
+            "Biases:",
+            calibration_lines[0],
+            f"First line should be Biases, got: {calibration_lines[0]}",
+        )
+        self.assertIn(
+            "Darks:",
+            calibration_lines[1],
+            f"Second line should be Darks, got: {calibration_lines[1]}",
+        )
+        self.assertIn(
+            "Flats:",
+            calibration_lines[2],
+            f"Third line should be Flats, got: {calibration_lines[2]}",
+        )
+
+    @patch("sys.stdout", new_callable=StringIO)
+    def test_bias_always_shown_even_when_zero(self, mock_stdout):
+        """Verify bias is ALWAYS shown, even when 0 of 0.
+
+        CRITICAL: Bias must always appear in output regardless of whether
+        bias frames are needed or present.
+        """
+        stats = {
+            "frame_count": 50,
+            "target_count": 2,
+            "date_count": 3,
+            "filter_count": 2,
+            "darks_needed": 5,
+            "darks_present": 5,
+            "flats_needed": 5,
+            "flats_present": 5,
+            "biases_needed": 0,  # No bias needed
+            "biases_present": 0,  # No bias present
+        }
+
+        print_summary(stats)
+
+        output = mock_stdout.getvalue()
+
+        # CRITICAL: Bias line must be present
+        self.assertIn("Biases:", output, "Bias line must always be present in output")
+        self.assertIn(
+            "0 of 0", output, "Should show 0 of 0 when no bias needed or present"
+        )
+
+    @patch("sys.stdout", new_callable=StringIO)
+    def test_bias_shown_when_all_missing(self, mock_stdout):
+        """Verify bias is shown when all directories are missing bias (0 of N)."""
+        stats = {
+            "frame_count": 50,
+            "target_count": 2,
+            "date_count": 3,
+            "filter_count": 2,
+            "darks_needed": 10,
+            "darks_present": 10,
+            "flats_needed": 10,
+            "flats_present": 10,
+            "biases_needed": 10,  # Bias needed
+            "biases_present": 0,  # But none present
+        }
+
+        print_summary(stats)
+
+        output = mock_stdout.getvalue()
+
+        # CRITICAL: Bias line must be present showing 0 of 10
+        self.assertIn(
+            "Biases:", output, "Bias line must be present even when all missing"
+        )
+        self.assertIn("0 of 10", output, "Should show 0 of 10 when all biases missing")
+
+    @patch("sys.stdout", new_callable=StringIO)
+    def test_order_consistent_regardless_of_values(self, mock_stdout):
+        """Verify output order remains Biases, Darks, Flats regardless of which have 0."""
+        # All frames missing
+        stats = {
+            "frame_count": 100,
+            "target_count": 5,
+            "date_count": 10,
+            "filter_count": 3,
+            "darks_needed": 20,
+            "darks_present": 0,
+            "flats_needed": 20,
+            "flats_present": 0,
+            "biases_needed": 10,
+            "biases_present": 0,
+        }
+
+        print_summary(stats)
+
+        output = mock_stdout.getvalue()
+        output_lines = output.split("\n")
+
+        calibration_lines = [
+            line
+            for line in output_lines
+            if any(frame in line for frame in ["Biases:", "Darks:", "Flats:"])
+        ]
+
+        # Order must still be Biases, Darks, Flats
+        self.assertIn("Biases:", calibration_lines[0])
+        self.assertIn("Darks:", calibration_lines[1])
+        self.assertIn("Flats:", calibration_lines[2])
+
+
 if __name__ == "__main__":
     unittest.main()
