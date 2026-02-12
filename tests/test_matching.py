@@ -293,6 +293,52 @@ class TestMatching(unittest.TestCase):
         # Settemp should be present
         self.assertEqual(filters[NORMALIZED_HEADER_SETTEMP], "-10")
 
+    @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
+    def test_find_matching_dark_missing_readoutmode(self, mock_get_metadata):
+        """Test that missing readoutmode (None) is filtered out from criteria.
+
+        Different cameras have different metadata - DSLRs don't have readoutmode,
+        gain, or offset. Verify None values are removed before filtering.
+        """
+        # Light metadata missing readoutmode (e.g., DSLR)
+        light_without_readout = {
+            NORMALIZED_HEADER_CAMERA: "Canon EOS",
+            NORMALIZED_HEADER_GAIN: None,  # DSLRs don't have gain
+            NORMALIZED_HEADER_OFFSET: None,  # DSLRs don't have offset
+            NORMALIZED_HEADER_SETTEMP: None,  # DSLRs don't have temp control
+            NORMALIZED_HEADER_READOUTMODE: None,  # DSLRs don't have readoutmode
+            NORMALIZED_HEADER_EXPOSURESECONDS: "300",
+        }
+
+        mock_get_metadata.return_value = {
+            "/test/library/dark_300s.xisf": {
+                NORMALIZED_HEADER_EXPOSURESECONDS: "300",
+                NORMALIZED_HEADER_FILENAME: "/test/library/dark_300s.xisf",
+            }
+        }
+
+        result = find_matching_dark(self.library_dir, light_without_readout)
+
+        # Verify get_filtered_metadata was called
+        self.assertTrue(mock_get_metadata.called)
+
+        # Verify None values were removed from filter criteria
+        call_args = mock_get_metadata.call_args
+        filters = call_args[1]["filters"]
+
+        # Only camera and type should be in criteria (all others were None)
+        self.assertIn(NORMALIZED_HEADER_CAMERA, filters)
+        self.assertEqual(filters[NORMALIZED_HEADER_CAMERA], "Canon EOS")
+
+        # None values should NOT be in criteria
+        self.assertNotIn(NORMALIZED_HEADER_GAIN, filters)
+        self.assertNotIn(NORMALIZED_HEADER_OFFSET, filters)
+        self.assertNotIn(NORMALIZED_HEADER_SETTEMP, filters)
+        self.assertNotIn(NORMALIZED_HEADER_READOUTMODE, filters)
+
+        # Result should still be found
+        self.assertIsNotNone(result)
+
 
 if __name__ == "__main__":
     unittest.main()

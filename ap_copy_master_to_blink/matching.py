@@ -9,6 +9,7 @@ from pathlib import Path
 import logging
 
 from ap_common import get_filtered_metadata
+from ap_common.metadata import build_normalized_filters
 from ap_common.constants import (
     TYPE_MASTER_DARK,
     TYPE_MASTER_FLAT,
@@ -55,16 +56,18 @@ def find_matching_dark(
     exposure = float(light_metadata.get(NORMALIZED_HEADER_EXPOSURESECONDS, -1))
 
     # Build filter criteria (without exposure)
-    filter_criteria = {
-        NORMALIZED_HEADER_TYPE: TYPE_MASTER_DARK,
-        NORMALIZED_HEADER_CAMERA: light_metadata.get(NORMALIZED_HEADER_CAMERA),
-        NORMALIZED_HEADER_GAIN: light_metadata.get(NORMALIZED_HEADER_GAIN),
-        NORMALIZED_HEADER_OFFSET: light_metadata.get(NORMALIZED_HEADER_OFFSET),
-        NORMALIZED_HEADER_SETTEMP: light_metadata.get(NORMALIZED_HEADER_SETTEMP),
-        NORMALIZED_HEADER_READOUTMODE: light_metadata.get(
-            NORMALIZED_HEADER_READOUTMODE
-        ),
-    }
+    # Different cameras have different metadata (DSLRs: ISO not gain, no offset/readoutmode)
+    filter_criteria = build_normalized_filters(
+        light_metadata,
+        [
+            NORMALIZED_HEADER_CAMERA,
+            NORMALIZED_HEADER_GAIN,
+            NORMALIZED_HEADER_OFFSET,
+            NORMALIZED_HEADER_SETTEMP,
+            NORMALIZED_HEADER_READOUTMODE,
+        ],
+        overrides={NORMALIZED_HEADER_TYPE: TYPE_MASTER_DARK},
+    )
 
     logger.debug(f"Searching for dark with criteria: {filter_criteria}")
     logger.debug(f"Target exposure: {exposure}s")
@@ -162,16 +165,19 @@ def find_matching_bias(
     Returns:
         Metadata dict for matching bias, or None if no match found
     """
-    filter_criteria = {
-        NORMALIZED_HEADER_TYPE: TYPE_MASTER_BIAS,
-        NORMALIZED_HEADER_CAMERA: light_metadata.get(NORMALIZED_HEADER_CAMERA),
-        NORMALIZED_HEADER_GAIN: light_metadata.get(NORMALIZED_HEADER_GAIN),
-        NORMALIZED_HEADER_OFFSET: light_metadata.get(NORMALIZED_HEADER_OFFSET),
-        NORMALIZED_HEADER_SETTEMP: light_metadata.get(NORMALIZED_HEADER_SETTEMP),
-        NORMALIZED_HEADER_READOUTMODE: light_metadata.get(
-            NORMALIZED_HEADER_READOUTMODE
-        ),
-    }
+    # Build filter criteria
+    # Different cameras have different metadata (DSLRs: ISO not gain, no offset/readoutmode)
+    filter_criteria = build_normalized_filters(
+        light_metadata,
+        [
+            NORMALIZED_HEADER_CAMERA,
+            NORMALIZED_HEADER_GAIN,
+            NORMALIZED_HEADER_OFFSET,
+            NORMALIZED_HEADER_SETTEMP,
+            NORMALIZED_HEADER_READOUTMODE,
+        ],
+        overrides={NORMALIZED_HEADER_TYPE: TYPE_MASTER_BIAS},
+    )
 
     logger.debug(f"Searching for bias with criteria: {filter_criteria}")
 
@@ -222,22 +228,23 @@ def find_matching_flat(
     Returns:
         Metadata dict for matching flat, or None if no match found
     """
-    filter_criteria = {
-        NORMALIZED_HEADER_TYPE: TYPE_MASTER_FLAT,
-        NORMALIZED_HEADER_CAMERA: light_metadata.get(NORMALIZED_HEADER_CAMERA),
-        NORMALIZED_HEADER_OPTIC: light_metadata.get(NORMALIZED_HEADER_OPTIC),
-        NORMALIZED_HEADER_FILTER: light_metadata.get(NORMALIZED_HEADER_FILTER),
-        NORMALIZED_HEADER_GAIN: light_metadata.get(NORMALIZED_HEADER_GAIN),
-        NORMALIZED_HEADER_OFFSET: light_metadata.get(NORMALIZED_HEADER_OFFSET),
-        NORMALIZED_HEADER_SETTEMP: light_metadata.get(NORMALIZED_HEADER_SETTEMP),
-        NORMALIZED_HEADER_READOUTMODE: light_metadata.get(
-            NORMALIZED_HEADER_READOUTMODE
-        ),
-        NORMALIZED_HEADER_FOCALLEN: light_metadata.get(NORMALIZED_HEADER_FOCALLEN),
-        NORMALIZED_HEADER_DATE: light_metadata.get(
-            NORMALIZED_HEADER_DATE
-        ),  # Exact match required
-    }
+    # Build filter criteria (exact date match required)
+    # Different cameras have different metadata (DSLRs: ISO not gain, no offset/readoutmode)
+    filter_criteria = build_normalized_filters(
+        light_metadata,
+        [
+            NORMALIZED_HEADER_CAMERA,
+            NORMALIZED_HEADER_OPTIC,
+            NORMALIZED_HEADER_FILTER,
+            NORMALIZED_HEADER_GAIN,
+            NORMALIZED_HEADER_OFFSET,
+            NORMALIZED_HEADER_SETTEMP,
+            NORMALIZED_HEADER_READOUTMODE,
+            NORMALIZED_HEADER_FOCALLEN,
+            NORMALIZED_HEADER_DATE,  # Exact match required
+        ],
+        overrides={NORMALIZED_HEADER_TYPE: TYPE_MASTER_FLAT},
+    )
 
     logger.debug(f"Searching for flat with criteria: {filter_criteria}")
 
