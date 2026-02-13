@@ -14,6 +14,7 @@ from ap_copy_master_to_blink.copy_masters import (
     scan_blink_directories,
     group_lights_by_config,
     copy_master_to_blink,
+    check_masters_exist,
     process_blink_directory,
 )
 from ap_copy_master_to_blink.__main__ import (
@@ -239,6 +240,129 @@ class TestCopyMasters(unittest.TestCase):
         self.assertTrue(result)
         mock_copy.assert_not_called()
 
+    def test_check_masters_exist_no_directory(self):
+        """Test check_masters_exist with non-existent directory."""
+        dark = {NORMALIZED_HEADER_FILENAME: "/library/masterDark.xisf"}
+        bias = {NORMALIZED_HEADER_FILENAME: "/library/masterBias.xisf"}
+        flat = {NORMALIZED_HEADER_FILENAME: "/library/masterFlat.xisf"}
+
+        result = check_masters_exist(Path("/nonexistent"), dark, bias, flat)
+
+        self.assertFalse(result["has_dark"])
+        self.assertFalse(result["has_bias"])
+        self.assertFalse(result["has_flat"])
+
+    def test_check_masters_exist_no_files_requested(self):
+        """Test check_masters_exist when no specific files requested."""
+        with patch("pathlib.Path.exists", return_value=True):
+            result = check_masters_exist(Path("/blink/DATE_2024-01-15"))
+
+        self.assertFalse(result["has_dark"])
+        self.assertFalse(result["has_bias"])
+        self.assertFalse(result["has_flat"])
+
+    def test_check_masters_exist_dark_exists(self):
+        """Test check_masters_exist finds existing dark file."""
+        dark = {NORMALIZED_HEADER_FILENAME: "/library/masterDark.xisf"}
+
+        def mock_exists(self):
+            # Date directory exists, dark file exists
+            posix_path = (
+                self.as_posix()
+                if hasattr(self, "as_posix")
+                else str(self).replace("\\", "/")
+            )
+            return posix_path in [
+                "/blink/DATE_2024-01-15",
+                "/blink/DATE_2024-01-15/masterDark.xisf",
+            ]
+
+        with patch("pathlib.Path.exists", mock_exists):
+            result = check_masters_exist(Path("/blink/DATE_2024-01-15"), dark=dark)
+
+        self.assertTrue(result["has_dark"])
+        self.assertFalse(result["has_bias"])
+        self.assertFalse(result["has_flat"])
+
+    def test_check_masters_exist_flat_exists(self):
+        """Test check_masters_exist finds existing flat file."""
+        flat = {NORMALIZED_HEADER_FILENAME: "/library/masterFlat.xisf"}
+
+        def mock_exists(self):
+            # Date directory exists, flat file exists
+            posix_path = (
+                self.as_posix()
+                if hasattr(self, "as_posix")
+                else str(self).replace("\\", "/")
+            )
+            return posix_path in [
+                "/blink/DATE_2024-01-15",
+                "/blink/DATE_2024-01-15/masterFlat.xisf",
+            ]
+
+        with patch("pathlib.Path.exists", mock_exists):
+            result = check_masters_exist(Path("/blink/DATE_2024-01-15"), flat=flat)
+
+        self.assertFalse(result["has_dark"])
+        self.assertFalse(result["has_bias"])
+        self.assertTrue(result["has_flat"])
+
+    def test_check_masters_exist_all_exist(self):
+        """Test check_masters_exist when all requested files exist."""
+        dark = {NORMALIZED_HEADER_FILENAME: "/library/masterDark.xisf"}
+        bias = {NORMALIZED_HEADER_FILENAME: "/library/masterBias.xisf"}
+        flat = {NORMALIZED_HEADER_FILENAME: "/library/masterFlat.xisf"}
+
+        def mock_exists(self):
+            # Date directory and all master files exist
+            posix_path = (
+                self.as_posix()
+                if hasattr(self, "as_posix")
+                else str(self).replace("\\", "/")
+            )
+            return posix_path in [
+                "/blink/DATE_2024-01-15",
+                "/blink/DATE_2024-01-15/masterDark.xisf",
+                "/blink/DATE_2024-01-15/masterBias.xisf",
+                "/blink/DATE_2024-01-15/masterFlat.xisf",
+            ]
+
+        with patch("pathlib.Path.exists", mock_exists):
+            result = check_masters_exist(
+                Path("/blink/DATE_2024-01-15"), dark, bias, flat
+            )
+
+        self.assertTrue(result["has_dark"])
+        self.assertTrue(result["has_bias"])
+        self.assertTrue(result["has_flat"])
+
+    def test_check_masters_exist_partial(self):
+        """Test check_masters_exist when only some files exist."""
+        dark = {NORMALIZED_HEADER_FILENAME: "/library/masterDark.xisf"}
+        bias = {NORMALIZED_HEADER_FILENAME: "/library/masterBias.xisf"}
+        flat = {NORMALIZED_HEADER_FILENAME: "/library/masterFlat.xisf"}
+
+        def mock_exists(self):
+            # Date directory exists, only dark exists
+            posix_path = (
+                self.as_posix()
+                if hasattr(self, "as_posix")
+                else str(self).replace("\\", "/")
+            )
+            return posix_path in [
+                "/blink/DATE_2024-01-15",
+                "/blink/DATE_2024-01-15/masterDark.xisf",
+            ]
+
+        with patch("pathlib.Path.exists", mock_exists):
+            result = check_masters_exist(
+                Path("/blink/DATE_2024-01-15"), dark, bias, flat
+            )
+
+        self.assertTrue(result["has_dark"])
+        self.assertFalse(result["has_bias"])
+        self.assertFalse(result["has_flat"])
+
     @patch("ap_copy_master_to_blink.copy_masters.scan_blink_directories")
     @patch("ap_copy_master_to_blink.copy_masters.determine_required_masters")
     @patch("ap_copy_master_to_blink.copy_masters.copy_master_to_blink")
@@ -258,11 +382,18 @@ class TestCopyMasters(unittest.TestCase):
     @patch("ap_copy_master_to_blink.copy_masters.group_lights_by_config")
     @patch("ap_copy_master_to_blink.copy_masters.determine_required_masters")
     @patch("ap_copy_master_to_blink.copy_masters.get_date_directory")
+    @patch("ap_copy_master_to_blink.copy_masters.check_masters_exist")
     @patch("ap_copy_master_to_blink.copy_masters.copy_master_to_blink")
     def test_process_blink_directory_with_all_masters(
-        self, mock_copy, mock_get_date, mock_determine, mock_group, mock_scan
+        self,
+        mock_copy,
+        mock_scan_existing,
+        mock_get_date,
+        mock_determine,
+        mock_group,
+        mock_scan,
     ):
-        """Test processing with all master types found."""
+        """Test processing with all master types found in library."""
         # Mock light metadata
         light_metadata = {
             NORMALIZED_HEADER_FILENAME: "/blink/M31/DATE_2024-01-15/FILTER_Ha/light.fits",
@@ -280,7 +411,14 @@ class TestCopyMasters(unittest.TestCase):
         mock_group.return_value = {("config_key",): [light_metadata]}
         mock_get_date.return_value = Path("/blink/M31/DATE_2024-01-15")
 
-        # Mock all masters found
+        # Mock no existing masters in blink
+        mock_scan_existing.return_value = {
+            "has_dark": False,
+            "has_bias": False,
+            "has_flat": False,
+        }
+
+        # Mock all masters found in library
         dark = {NORMALIZED_HEADER_FILENAME: "/library/dark.xisf"}
         bias = {NORMALIZED_HEADER_FILENAME: "/library/bias.xisf"}
         flat = {NORMALIZED_HEADER_FILENAME: "/library/flat.xisf"}
@@ -311,11 +449,18 @@ class TestCopyMasters(unittest.TestCase):
     @patch("ap_copy_master_to_blink.copy_masters.group_lights_by_config")
     @patch("ap_copy_master_to_blink.copy_masters.determine_required_masters")
     @patch("ap_copy_master_to_blink.copy_masters.get_date_directory")
+    @patch("ap_copy_master_to_blink.copy_masters.check_masters_exist")
     @patch("ap_copy_master_to_blink.copy_masters.copy_master_to_blink")
     def test_process_blink_directory_missing_masters(
-        self, mock_copy, mock_get_date, mock_determine, mock_group, mock_scan
+        self,
+        mock_copy,
+        mock_scan_existing,
+        mock_get_date,
+        mock_determine,
+        mock_group,
+        mock_scan,
     ):
-        """Test processing with missing masters."""
+        """Test processing with masters missing from both library and blink."""
         # Mock light metadata
         light_metadata = {
             NORMALIZED_HEADER_FILENAME: "/blink/M31/DATE_2024-01-15/FILTER_Ha/light.fits",
@@ -333,7 +478,14 @@ class TestCopyMasters(unittest.TestCase):
         mock_group.return_value = {("config_key",): [light_metadata]}
         mock_get_date.return_value = Path("/blink/M31/DATE_2024-01-15")
 
-        # Mock no masters found
+        # Mock no existing masters in blink
+        mock_scan_existing.return_value = {
+            "has_dark": False,
+            "has_bias": False,
+            "has_flat": False,
+        }
+
+        # Mock no masters found in library
         mock_determine.return_value = {
             TYPE_MASTER_DARK: None,
             TYPE_MASTER_BIAS: None,
@@ -353,6 +505,64 @@ class TestCopyMasters(unittest.TestCase):
         self.assertEqual(stats["biases_present"], 0)
         self.assertEqual(stats["flats_needed"], 1)
         self.assertEqual(stats["flats_present"], 0)
+
+    @patch("ap_copy_master_to_blink.copy_masters.scan_blink_directories")
+    @patch("ap_copy_master_to_blink.copy_masters.group_lights_by_config")
+    @patch("ap_copy_master_to_blink.copy_masters.determine_required_masters")
+    @patch("ap_copy_master_to_blink.copy_masters.get_date_directory")
+    @patch("ap_copy_master_to_blink.copy_masters.check_masters_exist")
+    @patch("ap_copy_master_to_blink.copy_masters.copy_master_to_blink")
+    def test_process_blink_directory_masters_already_in_blink(
+        self,
+        mock_copy,
+        mock_scan_existing,
+        mock_get_date,
+        mock_determine,
+        mock_group,
+        mock_scan,
+    ):
+        """Test processing when masters exist in blink but not in library."""
+        # Mock light metadata
+        light_metadata = {
+            NORMALIZED_HEADER_FILENAME: "/blink/M31/DATE_2024-01-15/FILTER_Ha/light.fits",
+            NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+            NORMALIZED_HEADER_GAIN: "100",
+            NORMALIZED_HEADER_OFFSET: "50",
+            NORMALIZED_HEADER_SETTEMP: "-10",
+            NORMALIZED_HEADER_READOUTMODE: "0",
+            NORMALIZED_HEADER_EXPOSURESECONDS: "300",
+            NORMALIZED_HEADER_FILTER: "Ha",
+            NORMALIZED_HEADER_DATE: "2024-01-15",
+        }
+
+        mock_scan.return_value = [light_metadata]
+        mock_group.return_value = {("config_key",): [light_metadata]}
+        mock_get_date.return_value = Path("/blink/M31/DATE_2024-01-15")
+
+        # Mock masters already exist in blink (e.g., manually copied)
+        mock_scan_existing.return_value = {
+            "has_dark": True,
+            "has_bias": False,
+            "has_flat": True,
+        }
+
+        # Mock no masters found in library
+        mock_determine.return_value = {
+            TYPE_MASTER_DARK: None,
+            TYPE_MASTER_BIAS: None,
+            TYPE_MASTER_FLAT: None,
+        }
+
+        stats = process_blink_directory(Path("/library"), Path("/blink"), dry_run=False)
+
+        self.assertEqual(stats["frame_count"], 1)
+        self.assertEqual(stats["configs_processed"], 1)
+        self.assertEqual(stats["darks_needed"], 1)
+        self.assertEqual(stats["darks_present"], 1)  # Found locally
+        self.assertEqual(stats["flats_needed"], 1)
+        self.assertEqual(stats["flats_present"], 1)  # Found locally
+        # Should not try to copy since they exist locally
+        mock_copy.assert_not_called()
 
 
 class TestCLIFunctions(unittest.TestCase):
@@ -512,9 +722,10 @@ class TestIntegrationOld(unittest.TestCase):
     """Integration tests that call real functions without mocking."""
 
     @patch("ap_copy_master_to_blink.copy_masters.determine_required_masters")
+    @patch("ap_copy_master_to_blink.copy_masters.check_masters_exist")
     @patch("ap_copy_master_to_blink.copy_masters.copy_master_to_blink")
     def test_copies_to_all_target_directories_in_group(
-        self, mock_copy_master, mock_determine
+        self, mock_copy_master, mock_scan_existing, mock_determine
     ):
         """Test that masters are copied to ALL target directories with same config.
 
@@ -564,6 +775,13 @@ class TestIntegrationOld(unittest.TestCase):
         }
         mock_determine.return_value = mock_masters
         mock_copy_master.return_value = True
+
+        # Mock no existing masters in blink
+        mock_scan_existing.return_value = {
+            "has_dark": False,
+            "has_bias": False,
+            "has_flat": False,
+        }
 
         with patch(
             "ap_copy_master_to_blink.copy_masters.scan_blink_directories",
@@ -620,12 +838,11 @@ class TestIntegrationOld(unittest.TestCase):
                     self.fail(f"copy_file received Path object instead of string: {e}")
                 raise
 
-    @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
-    def test_get_filtered_metadata_returns_dict(self, mock_get_filtered_metadata):
-        """Test that code handles get_filtered_metadata returning dict, not list.
+    @patch("ap_copy_master_to_blink.matching.find_darks_util")
+    def test_get_filtered_metadata_returns_dict(self, mock_find_darks):
+        """Test that find_matching_dark handles list return from utility.
 
-        Regression test for bug where code iterated over darks as if it were
-        a list, but get_filtered_metadata returns a dict mapping filenames to metadata.
+        Regression test - updated for new utility-based implementation.
         """
         from ap_copy_master_to_blink.matching import find_matching_dark
         from ap_common.constants import (
@@ -633,17 +850,17 @@ class TestIntegrationOld(unittest.TestCase):
             NORMALIZED_HEADER_FILENAME,
         )
 
-        # get_filtered_metadata returns a dict mapping filenames to metadata dicts
-        mock_get_filtered_metadata.return_value = {
-            "/test/dark1.xisf": {
+        # Utility returns list of metadata dicts (sorted by exposure, longest first)
+        mock_find_darks.return_value = [
+            {
                 NORMALIZED_HEADER_EXPOSURESECONDS: "300",
                 NORMALIZED_HEADER_FILENAME: "/test/dark1.xisf",
             },
-            "/test/dark2.xisf": {
+            {
                 NORMALIZED_HEADER_EXPOSURESECONDS: "120",
                 NORMALIZED_HEADER_FILENAME: "/test/dark2.xisf",
             },
-        }
+        ]
 
         light_metadata = {
             "camera": "TestCamera",
@@ -653,7 +870,7 @@ class TestIntegrationOld(unittest.TestCase):
             NORMALIZED_HEADER_EXPOSURESECONDS: "300",
         }
 
-        # This should not raise AttributeError: 'str' object has no attribute 'get'
+        # Should return first match (exact exposure match)
         result = find_matching_dark(Path("/test/library"), light_metadata)
         self.assertIsNotNone(result)
         self.assertEqual(result[NORMALIZED_HEADER_EXPOSURESECONDS], "300")

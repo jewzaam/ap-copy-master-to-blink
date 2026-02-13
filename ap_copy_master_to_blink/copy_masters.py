@@ -150,6 +150,46 @@ def group_lights_by_config(
     return groups
 
 
+def check_masters_exist(
+    date_dir: Path,
+    dark: Dict[str, str] = None,
+    bias: Dict[str, str] = None,
+    flat: Dict[str, str] = None,
+) -> Dict[str, bool]:
+    """
+    Check if specific master calibration files already exist in date directory.
+
+    Args:
+        date_dir: Directory to check for existing masters
+        dark: Dark master metadata dict (or None if not needed)
+        bias: Bias master metadata dict (or None if not needed)
+        flat: Flat master metadata dict (or None if not needed)
+
+    Returns:
+        Dict with has_dark, has_bias, has_flat boolean flags indicating
+        whether the specific files already exist
+    """
+    result = {"has_dark": False, "has_bias": False, "has_flat": False}
+
+    if not date_dir.exists():
+        return result
+
+    # Check if specific master files exist by filename
+    if dark:
+        dark_name = Path(dark[NORMALIZED_HEADER_FILENAME]).name
+        result["has_dark"] = (date_dir / dark_name).exists()
+
+    if bias:
+        bias_name = Path(bias[NORMALIZED_HEADER_FILENAME]).name
+        result["has_bias"] = (date_dir / bias_name).exists()
+
+    if flat:
+        flat_name = Path(flat[NORMALIZED_HEADER_FILENAME]).name
+        result["has_flat"] = (date_dir / flat_name).exists()
+
+    return result
+
+
 def copy_master_to_blink(
     master_metadata: Dict[str, str],
     dest_dir: Path,
@@ -310,47 +350,69 @@ def process_blink_directory(
             date_dir = get_date_directory(lights_dir)
             date_dirs.add(date_dir)
 
+        # Track whether any date_dir has the required masters
+        any_dark_present = False
+        any_flat_present = False
+
         # Copy masters to each DATE directory
         for date_dir in date_dirs:
             # Ensure we have a tracking set for this DATE directory
             if date_dir not in processed_masters:
                 processed_masters[date_dir] = set()
 
-            # Copy dark (if found and not already copied)
+            # Check if the specific masters we need already exist in date_dir
+            existing_masters = check_masters_exist(date_dir, dark, bias, flat)
+
+            # Copy dark (if needed and not already present)
             stats["darks_needed"] += 1
-            if dark:
+            if existing_masters["has_dark"]:
+                logger.debug("Dark already exists in blink for this configuration")
+                stats["darks_present"] += 1
+                any_dark_present = True
+            elif dark:
                 dark_name = Path(dark[NORMALIZED_HEADER_FILENAME]).name
                 if dark_name not in processed_masters[date_dir]:
                     copy_master_to_blink(dark, date_dir, dry_run)
                     processed_masters[date_dir].add(dark_name)
                 stats["darks_present"] += 1
+                any_dark_present = True
 
-            # Copy bias (if needed and found and not already copied)
+            # Copy bias (if needed and not already present)
             if bias:
                 stats["biases_needed"] += 1
-                bias_name = Path(bias[NORMALIZED_HEADER_FILENAME]).name
-                if bias_name not in processed_masters[date_dir]:
-                    copy_master_to_blink(bias, date_dir, dry_run)
-                    processed_masters[date_dir].add(bias_name)
-                stats["biases_present"] += 1
+                if existing_masters["has_bias"]:
+                    logger.debug("Bias already exists in blink for this configuration")
+                    stats["biases_present"] += 1
+                else:
+                    bias_name = Path(bias[NORMALIZED_HEADER_FILENAME]).name
+                    if bias_name not in processed_masters[date_dir]:
+                        copy_master_to_blink(bias, date_dir, dry_run)
+                        processed_masters[date_dir].add(bias_name)
+                    stats["biases_present"] += 1
 
-            # Copy flat (if found and not already copied)
+            # Copy flat (if needed and not already present)
             stats["flats_needed"] += 1
-            if flat:
+            if existing_masters["has_flat"]:
+                logger.debug("Flat already exists in blink for this configuration")
+                stats["flats_present"] += 1
+                any_flat_present = True
+            elif flat:
                 flat_name = Path(flat[NORMALIZED_HEADER_FILENAME]).name
                 if flat_name not in processed_masters[date_dir]:
                     copy_master_to_blink(flat, date_dir, dry_run)
                     processed_masters[date_dir].add(flat_name)
                 stats["flats_present"] += 1
+                any_flat_present = True
 
         # Collect missing master warnings (print after progress bar)
-        if not dark:
+        # Only warn if not found in library AND not already present in any date_dir
+        if not dark and not any_dark_present:
             warnings.append(
                 f"Missing dark for exposure={light_metadata.get(NORMALIZED_HEADER_EXPOSURESECONDS)}s "
                 f"(run with --debug for search details)"
             )
 
-        if not flat:
+        if not flat and not any_flat_present:
             warnings.append(
                 f"Missing flat for filter={light_metadata.get(NORMALIZED_HEADER_FILTER)}, "
                 f"date={light_metadata.get(NORMALIZED_HEADER_DATE)} "

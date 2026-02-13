@@ -52,34 +52,35 @@ class TestMatching(unittest.TestCase):
             NORMALIZED_HEADER_FOCALLEN: "250",
         }
 
-    @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
-    def test_find_matching_dark_exact_exposure(self, mock_get_metadata):
+    @patch("ap_copy_master_to_blink.matching.find_darks_util")
+    def test_find_matching_dark_exact_exposure(self, mock_find_darks):
         """Test finding dark with exact exposure match."""
-        mock_get_metadata.return_value = {
-            "/test/library/dark_300s.xisf": {
+        mock_find_darks.return_value = [
+            {
                 NORMALIZED_HEADER_EXPOSURESECONDS: "300",
                 NORMALIZED_HEADER_FILENAME: "/test/library/dark_300s.xisf",
             }
-        }
+        ]
 
         result = find_matching_dark(self.library_dir, self.light_metadata)
 
         self.assertIsNotNone(result)
         self.assertEqual(result[NORMALIZED_HEADER_EXPOSURESECONDS], "300")
 
-    @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
-    def test_find_matching_dark_shorter_exposure(self, mock_get_metadata):
+    @patch("ap_copy_master_to_blink.matching.find_darks_util")
+    def test_find_matching_dark_shorter_exposure(self, mock_find_darks):
         """Test finding dark with shorter exposure when bias allowed."""
-        mock_get_metadata.return_value = {
-            "/test/library/dark_120s.xisf": {
+        # Utility returns sorted list (longest first)
+        mock_find_darks.return_value = [
+            {
                 NORMALIZED_HEADER_EXPOSURESECONDS: "120",
                 NORMALIZED_HEADER_FILENAME: "/test/library/dark_120s.xisf",
             },
-            "/test/library/dark_60s.xisf": {
+            {
                 NORMALIZED_HEADER_EXPOSURESECONDS: "60",
                 NORMALIZED_HEADER_FILENAME: "/test/library/dark_60s.xisf",
             },
-        }
+        ]
 
         result = find_matching_dark(
             self.library_dir, self.light_metadata, allow_bias=True
@@ -89,46 +90,42 @@ class TestMatching(unittest.TestCase):
         # Should pick longest dark < 300s (120s)
         self.assertEqual(result[NORMALIZED_HEADER_EXPOSURESECONDS], "120")
 
-    @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
-    def test_find_matching_dark_no_match(self, mock_get_metadata):
+    @patch("ap_copy_master_to_blink.matching.find_darks_util")
+    def test_find_matching_dark_no_match(self, mock_find_darks):
         """Test when no matching dark found."""
-        mock_get_metadata.return_value = {}
+        mock_find_darks.return_value = []
 
         result = find_matching_dark(self.library_dir, self.light_metadata)
 
         self.assertIsNone(result)
 
-    @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
-    def test_find_matching_bias(self, mock_get_metadata):
+    @patch("ap_copy_master_to_blink.matching.find_bias_util")
+    def test_find_matching_bias(self, mock_find_bias):
         """Test finding matching bias."""
-        mock_get_metadata.return_value = {
-            "/test/library/bias.xisf": {
-                NORMALIZED_HEADER_FILENAME: "/test/library/bias.xisf"
-            }
-        }
+        mock_find_bias.return_value = [
+            {NORMALIZED_HEADER_FILENAME: "/test/library/bias.xisf"}
+        ]
 
         result = find_matching_bias(self.library_dir, self.light_metadata)
 
         self.assertIsNotNone(result)
         self.assertEqual(result[NORMALIZED_HEADER_FILENAME], "/test/library/bias.xisf")
 
-    @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
-    def test_find_matching_bias_no_match(self, mock_get_metadata):
+    @patch("ap_copy_master_to_blink.matching.find_bias_util")
+    def test_find_matching_bias_no_match(self, mock_find_bias):
         """Test when no matching bias found."""
-        mock_get_metadata.return_value = {}
+        mock_find_bias.return_value = []
 
         result = find_matching_bias(self.library_dir, self.light_metadata)
 
         self.assertIsNone(result)
 
-    @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
-    def test_find_matching_flat(self, mock_get_metadata):
+    @patch("ap_copy_master_to_blink.matching.find_flats_util")
+    def test_find_matching_flat(self, mock_find_flats):
         """Test finding matching flat."""
-        mock_get_metadata.return_value = {
-            "/test/library/flat_ha.xisf": {
-                NORMALIZED_HEADER_FILENAME: "/test/library/flat_ha.xisf"
-            }
-        }
+        mock_find_flats.return_value = [
+            {NORMALIZED_HEADER_FILENAME: "/test/library/flat_ha.xisf"}
+        ]
 
         result = find_matching_flat(self.library_dir, self.light_metadata)
 
@@ -137,10 +134,10 @@ class TestMatching(unittest.TestCase):
             result[NORMALIZED_HEADER_FILENAME], "/test/library/flat_ha.xisf"
         )
 
-    @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
-    def test_find_matching_flat_no_match(self, mock_get_metadata):
+    @patch("ap_copy_master_to_blink.matching.find_flats_util")
+    def test_find_matching_flat_no_match(self, mock_find_flats):
         """Test when no matching flat found."""
-        mock_get_metadata.return_value = {}
+        mock_find_flats.return_value = []
 
         result = find_matching_flat(self.library_dir, self.light_metadata)
 
@@ -210,58 +207,47 @@ class TestMatching(unittest.TestCase):
         self.assertIsNone(masters[TYPE_MASTER_BIAS])
         self.assertIsNotNone(masters[TYPE_MASTER_FLAT])
 
-    @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
-    def test_find_matching_dark_none_filter_normalized(self, mock_get_metadata):
+    @patch("ap_copy_master_to_blink.matching.find_darks_util")
+    def test_find_matching_dark_none_filter_normalized(self, mock_find_darks):
         """Test that None filter is normalized to empty string in filter criteria."""
         # Light with None filter
         light_with_none_filter = self.light_metadata.copy()
         light_with_none_filter[NORMALIZED_HEADER_FILTER] = None
 
-        mock_get_metadata.return_value = {
-            "/test/library/dark_300s.xisf": {
+        mock_find_darks.return_value = [
+            {
                 NORMALIZED_HEADER_EXPOSURESECONDS: "300",
                 NORMALIZED_HEADER_FILENAME: "/test/library/dark_300s.xisf",
             }
-        }
+        ]
 
         result = find_matching_dark(self.library_dir, light_with_none_filter)
 
-        # Verify get_filtered_metadata was called with normalized (empty string) values
-        call_args = mock_get_metadata.call_args
-        filters = call_args[1]["filters"]
-
-        # Camera should be normalized (not None)
-        self.assertEqual(filters[NORMALIZED_HEADER_CAMERA], "ASI2600MM")
-        # No filter key should be present with empty string after normalization
-        # (empty strings are removed from filter criteria)
+        # None values are handled by ap_common utilities
         self.assertIsNotNone(result)
 
-    @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
-    def test_find_matching_flat_none_filter_normalized(self, mock_get_metadata):
+    @patch("ap_copy_master_to_blink.matching.find_flats_util")
+    def test_find_matching_flat_none_filter_normalized(self, mock_find_flats):
         """Test that None filter is normalized to empty string for flat matching."""
         # Light with None filter
         light_with_none_filter = self.light_metadata.copy()
         light_with_none_filter[NORMALIZED_HEADER_FILTER] = None
 
-        mock_get_metadata.return_value = {
-            "/test/library/flat_nofilter.xisf": {
-                NORMALIZED_HEADER_FILENAME: "/test/library/flat_nofilter.xisf"
-            }
-        }
+        mock_find_flats.return_value = [
+            {NORMALIZED_HEADER_FILENAME: "/test/library/flat_nofilter.xisf"}
+        ]
 
         result = find_matching_flat(self.library_dir, light_with_none_filter)
 
-        # Verify get_filtered_metadata was called
-        self.assertTrue(mock_get_metadata.called)
-
+        # None values are handled by ap_common utilities
         # Verify result was found
         self.assertIsNotNone(result)
         self.assertEqual(
             result[NORMALIZED_HEADER_FILENAME], "/test/library/flat_nofilter.xisf"
         )
 
-    @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
-    def test_find_matching_bias_none_values_normalized(self, mock_get_metadata):
+    @patch("ap_copy_master_to_blink.matching.find_bias_util")
+    def test_find_matching_bias_none_values_normalized(self, mock_find_bias):
         """Test that None values in multiple fields are normalized to empty string."""
         # Light with multiple None values
         light_with_nones = {
@@ -273,28 +259,17 @@ class TestMatching(unittest.TestCase):
             NORMALIZED_HEADER_EXPOSURESECONDS: "300",
         }
 
-        mock_get_metadata.return_value = {
-            "/test/library/bias.xisf": {
-                NORMALIZED_HEADER_FILENAME: "/test/library/bias.xisf"
-            }
-        }
+        mock_find_bias.return_value = [
+            {NORMALIZED_HEADER_FILENAME: "/test/library/bias.xisf"}
+        ]
 
         _ = find_matching_bias(self.library_dir, light_with_nones)
 
-        # Verify get_filtered_metadata was called
-        self.assertTrue(mock_get_metadata.called)
+        # Verify utility was called - None values are handled by ap_common utilities
+        self.assertTrue(mock_find_bias.called)
 
-        # Verify None values were handled (empty strings removed from criteria)
-        call_args = mock_get_metadata.call_args
-        filters = call_args[1]["filters"]
-
-        # Camera should be present
-        self.assertEqual(filters[NORMALIZED_HEADER_CAMERA], "ASI2600MM")
-        # Settemp should be present
-        self.assertEqual(filters[NORMALIZED_HEADER_SETTEMP], "-10")
-
-    @patch("ap_copy_master_to_blink.matching.get_filtered_metadata")
-    def test_find_matching_dark_missing_readoutmode(self, mock_get_metadata):
+    @patch("ap_copy_master_to_blink.matching.find_darks_util")
+    def test_find_matching_dark_missing_readoutmode(self, mock_find_darks):
         """Test that missing readoutmode (None) is filtered out from criteria.
 
         Different cameras have different metadata - DSLRs don't have readoutmode,
@@ -310,34 +285,199 @@ class TestMatching(unittest.TestCase):
             NORMALIZED_HEADER_EXPOSURESECONDS: "300",
         }
 
-        mock_get_metadata.return_value = {
-            "/test/library/dark_300s.xisf": {
+        mock_find_darks.return_value = [
+            {
                 NORMALIZED_HEADER_EXPOSURESECONDS: "300",
                 NORMALIZED_HEADER_FILENAME: "/test/library/dark_300s.xisf",
             }
-        }
+        ]
 
         result = find_matching_dark(self.library_dir, light_without_readout)
 
-        # Verify get_filtered_metadata was called
-        self.assertTrue(mock_get_metadata.called)
-
-        # Verify None values were removed from filter criteria
-        call_args = mock_get_metadata.call_args
-        filters = call_args[1]["filters"]
-
-        # Only camera and type should be in criteria (all others were None)
-        self.assertIn(NORMALIZED_HEADER_CAMERA, filters)
-        self.assertEqual(filters[NORMALIZED_HEADER_CAMERA], "Canon EOS")
-
-        # None values should NOT be in criteria
-        self.assertNotIn(NORMALIZED_HEADER_GAIN, filters)
-        self.assertNotIn(NORMALIZED_HEADER_OFFSET, filters)
-        self.assertNotIn(NORMALIZED_HEADER_SETTEMP, filters)
-        self.assertNotIn(NORMALIZED_HEADER_READOUTMODE, filters)
+        # None values are handled by ap_common utilities (build_normalized_filters)
+        # Verify utility was called
+        self.assertTrue(mock_find_darks.called)
 
         # Result should still be found
         self.assertIsNotNone(result)
+
+
+class TestLibraryProfileFromPath(unittest.TestCase):
+    """
+    Regression tests for library search profileFromPath parameter.
+
+    Background:
+    -----------
+    The library uses directory structure: _Library/{frame_type}/{camera}/{optic}/DATE_{date}/
+    Unlike blink directories (which use {optic}@f{ratio}+{camera} format), library directories
+    use bare equipment names without KEY_VALUE encoding (e.g., "ATR585M/SQA55" not "CAMERA_ATR585M").
+
+    When profileFromPath=True (default), ap_common attempts to extract metadata from path structure.
+    This works for blink directories but FAILS for library directories because:
+    1. Bare directory names (ATR585M, SQA55) are not recognized as KEY_VALUE pairs
+    2. Camera and optic metadata are missing from extracted profile
+    3. Matching fails even when correct calibration frames exist
+
+    Fix:
+    ----
+    Library searches MUST use profileFromPath=False to read actual FITS headers from files
+    instead of attempting to parse library directory structure.
+
+    Critical Comment Reference:
+    ---------------------------
+    ap_common/calibration.py lines 86-87:
+        # IMPORTANT: profileFromPath only works with blink/data directory structure
+        # For library searches, it should typically be False to read actual file headers
+
+    Regression Test Strategy:
+    -------------------------
+    These tests verify that matching.py functions explicitly pass profileFromPath=False
+    when calling ap_common calibration utilities. The tests use mocks to inspect the
+    actual function call arguments, ensuring the parameter is set correctly.
+
+    To verify this test catches the regression:
+    1. Comment out profileFromPath=False in matching.py
+    2. Run: pytest tests/test_matching.py::TestLibraryProfileFromPath -v
+    3. Tests should FAIL with assertion about missing profileFromPath parameter
+    4. Restore profileFromPath=False
+    5. Tests should PASS
+    """
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.library_dir = Path("/test/library")
+        self.light_metadata = {
+            NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+            NORMALIZED_HEADER_GAIN: "100",
+            NORMALIZED_HEADER_OFFSET: "50",
+            NORMALIZED_HEADER_SETTEMP: "-10",
+            NORMALIZED_HEADER_READOUTMODE: "0",
+            NORMALIZED_HEADER_EXPOSURESECONDS: "300",
+            NORMALIZED_HEADER_FILTER: "Ha",
+            NORMALIZED_HEADER_DATE: "2024-01-15",
+            NORMALIZED_HEADER_OPTIC: "RedCat51",
+            NORMALIZED_HEADER_FOCALLEN: "250",
+        }
+
+    @patch("ap_copy_master_to_blink.matching.find_darks_util")
+    def test_find_matching_dark_uses_profileFromPath_false(self, mock_find_darks):
+        """
+        Verify find_matching_dark() passes profileFromPath=False to library search.
+
+        Regression: Without profileFromPath=False, library searches fail because
+        bare directory names (e.g., "ATR585M") are not recognized as KEY_VALUE pairs,
+        causing camera/optic metadata to be missing from the extracted profile.
+        """
+        mock_find_darks.return_value = []
+
+        find_matching_dark(self.library_dir, self.light_metadata)
+
+        # Verify the function was called with profileFromPath=False
+        mock_find_darks.assert_called_once()
+        call_kwargs = mock_find_darks.call_args[1]
+        self.assertIn(
+            "profileFromPath",
+            call_kwargs,
+            "find_darks_util must be called with explicit profileFromPath parameter",
+        )
+        self.assertFalse(
+            call_kwargs["profileFromPath"],
+            "Library searches must use profileFromPath=False to read file headers",
+        )
+
+    @patch("ap_copy_master_to_blink.matching.find_bias_util")
+    def test_find_matching_bias_uses_profileFromPath_false(self, mock_find_bias):
+        """
+        Verify find_matching_bias() passes profileFromPath=False to library search.
+
+        Regression: Without profileFromPath=False, library searches fail because
+        bare directory names (e.g., "ATR585M") are not recognized as KEY_VALUE pairs,
+        causing camera metadata to be missing from the extracted profile.
+        """
+        mock_find_bias.return_value = []
+
+        find_matching_bias(self.library_dir, self.light_metadata)
+
+        # Verify the function was called with profileFromPath=False
+        mock_find_bias.assert_called_once()
+        call_kwargs = mock_find_bias.call_args[1]
+        self.assertIn(
+            "profileFromPath",
+            call_kwargs,
+            "find_bias_util must be called with explicit profileFromPath parameter",
+        )
+        self.assertFalse(
+            call_kwargs["profileFromPath"],
+            "Library searches must use profileFromPath=False to read file headers",
+        )
+
+    @patch("ap_copy_master_to_blink.matching.find_flats_util")
+    def test_find_matching_flat_uses_profileFromPath_false(self, mock_find_flats):
+        """
+        Verify find_matching_flat() passes profileFromPath=False to library search.
+
+        Regression: Without profileFromPath=False, library searches fail because
+        bare directory names (e.g., "ATR585M/SQA55") are not recognized as KEY_VALUE pairs,
+        causing camera/optic metadata to be missing from the extracted profile.
+        """
+        mock_find_flats.return_value = []
+
+        find_matching_flat(self.library_dir, self.light_metadata)
+
+        # Verify the function was called with profileFromPath=False
+        mock_find_flats.assert_called_once()
+        call_kwargs = mock_find_flats.call_args[1]
+        self.assertIn(
+            "profileFromPath",
+            call_kwargs,
+            "find_flats_util must be called with explicit profileFromPath parameter",
+        )
+        self.assertFalse(
+            call_kwargs["profileFromPath"],
+            "Library searches must use profileFromPath=False to read file headers",
+        )
+
+    @patch("ap_copy_master_to_blink.matching.find_flats_util")
+    def test_library_search_parameters_complete(self, mock_find_flats):
+        """
+        Verify library search includes all expected parameters.
+
+        This test documents the complete expected function signature for library searches,
+        serving as a reference for the correct parameter set.
+        """
+        mock_find_flats.return_value = []
+
+        find_matching_flat(self.library_dir, self.light_metadata)
+
+        # Verify all expected parameters are present
+        call_kwargs = mock_find_flats.call_args[1]
+        expected_params = {
+            "match_fields",
+            "recursive",
+            "profileFromPath",
+            "printStatus",
+        }
+
+        for param in expected_params:
+            self.assertIn(
+                param,
+                call_kwargs,
+                f"Library search must include {param} parameter",
+            )
+
+        # Verify specific values for library searches
+        self.assertTrue(
+            call_kwargs["recursive"],
+            "Library searches must use recursive=True to traverse subdirectories",
+        )
+        self.assertFalse(
+            call_kwargs["profileFromPath"],
+            "Library searches must use profileFromPath=False",
+        )
+        self.assertFalse(
+            call_kwargs["printStatus"],
+            "Library searches should be silent (printStatus=False)",
+        )
 
 
 if __name__ == "__main__":

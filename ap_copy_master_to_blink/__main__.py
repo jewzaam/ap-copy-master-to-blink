@@ -172,6 +172,7 @@ Examples:
 
     # Setup logging
     setup_logging(name="ap_copy_master_to_blink", debug=args.debug, quiet=args.quiet)
+    setup_logging(name="ap_common", debug=args.debug, quiet=args.quiet)
 
     # Resolve paths (support environment variables)
     library_dir = Path(resolve_path(replace_env_vars(args.library_dir)))
