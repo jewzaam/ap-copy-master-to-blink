@@ -9,7 +9,7 @@ from typing import Dict, List, Set, Tuple
 import logging
 
 from ap_common import get_metadata, get_filtered_metadata, copy_file
-from ap_common.progress import progress_iter
+from ap_common.progress import progress_iter, ProgressTracker
 from ap_common.constants import (
     NORMALIZED_HEADER_CAMERA,
     NORMALIZED_HEADER_GAIN,
@@ -31,6 +31,9 @@ from .config import SUPPORTED_EXTENSIONS
 from .matching import determine_required_masters
 
 logger = logging.getLogger(__name__)
+
+# Set default description width for aligned progress bars
+ProgressTracker.set_default_desc_width(20)
 
 
 def get_date_directory(lights_dir: Path) -> Path:
