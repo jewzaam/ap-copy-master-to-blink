@@ -1,245 +1,199 @@
 # Flat Frame Matching: Design Document
 
 **Status**: Proposal
-**Issue**: [#5 - Add flexible flat date matching with configurable tolerance](https://github.com/jewzaam/ap-copy-master-to-blink/issues/5)
+**Issue**: [#5](https://github.com/jewzaam/ap-copy-master-to-blink/issues/5)
 **Date**: 2026-02-14
 
 ## Problem
 
-The tool currently requires an exact DATE match between light frames and flat frames. This is too strict. Flats are valid until the imaging train physically changes (e.g., filter wheel replaced, camera rotated, optical train adjusted). A flat taken three weeks before a light session is perfectly fine if nothing changed. A flat taken yesterday is useless if the filter wheel was replaced today.
+The tool requires exact DATE match for flats. This is too strict. Flats remain valid until the imaging train physically changes. Calendar proximity is irrelevant; equipment continuity is what matters.
 
-The real constraint is not calendar proximity -- it is **equipment continuity**. A simple `--flat-date-tolerance N` days parameter does not model this correctly.
+## Solution Overview
 
-## Core Concept: Rig Change Tracking
+When no exact-date flat exists:
 
-A **rig change** is any physical modification to the imaging train that invalidates existing flat frames. Common examples:
+1. Find all candidate flat dates
+2. Remove any that are too old (before a recorded cutoff)
+3. Present remaining dates to the user
+4. User selects which flat to use
+5. Record the selection to avoid re-prompting
 
-- Replaced or repositioned filter wheel
-- Changed camera orientation or spacing
-- Swapped optical elements (reducer, flattener)
-- Adjusted focuser back-focus
+## State File
 
-When a rig change occurs, all flats taken before that date are invalid for lights taken after that date.
-
-## State File: `flat-state.yaml`
-
-A YAML file tracks rig change dates, **keyed by blink directory path**. This eliminates any guesswork about equipment matching -- the directory the user is processing defines the scope.
-
-The CLI accepts `--flat-state <path>` pointing to this file. The path must be explicitly provided; there is no default location. The file is both read and written by the tool.
-
-### Format
+A YAML file keyed by blink directory path. Tracks the oldest valid flat date for each directory.
 
 ```yaml
-# Rig change dates for ap-copy-master-to-blink
-# Key: blink directory path (as provided to CLI)
-# Value: cutoff date (flats must be from this date or later)
+# Oldest valid flat date per blink directory
+# Flats from this date or later are usable; older flats are rejected
 
 "/mnt/data/RedCat51@f4.9+ASI2600MM/10_Blink": "2025-09-01"
 "/mnt/data/Askar80PHQ@f6+ASI533MC/10_Blink": "2025-06-15"
 ```
 
-### Semantics
+**No entry** = no cutoff = all flat dates are candidates (treated as cutoff of epoch).
 
-For a given blink directory, if an entry exists in the state file, only flats with `flat_date >= cutoff_date` are valid. Flats from before the cutoff are automatically rejected without prompting.
-
-If no entry exists for a blink directory, any old flat is a candidate (subject to user confirmation on first use).
-
-### File Lifecycle
-
-- Created automatically on first interactive "no" response if it does not exist
-- Updated when the user records a new rig change
-- Can be hand-edited
-- If `--flat-state` is not provided, the tool falls back to exact-date matching only (current behavior preserved)
+**Entry exists** = only flats with `date >= entry` are candidates.
 
 ## CLI
 
 ```
 --flat-state <path>   Path to flat state file (YAML). Enables flexible flat
-                      matching with rig change tracking. Required for non-exact
-                      flat matching. File is read and written by the tool.
+                      matching. File is read and written by the tool.
+                      Required; no default location.
 ```
 
-No other flat-related flags are needed.
+Without `--flat-state`: exact date match only (current behavior).
 
-## Matching Algorithm
+## Algorithm
 
-### Step 1: Exact Date Match
+### Step 1: Exact Match
 
-Search for a flat matching all criteria including exact DATE. If found, use it. Done.
+Search for flat matching all criteria including exact DATE. If found, use it. Done.
 
-### Step 2: Check for `--flat-state`
+### Step 2: Gather Candidates
 
-If `--flat-state` not provided, mark as missing (current behavior). Stop.
+If `--flat-state` not provided, mark missing. Stop.
 
-### Step 3: Find Candidate Old Flats
+Otherwise, find all flats matching non-date criteria (camera, optic, filter, gain, offset, settemp, readoutmode, focallen). Collect their dates.
 
-Search for flats matching all non-date criteria with `flat_date < light_date`, sorted most-recent-first.
+### Step 3: Apply Cutoff
 
-### Step 4: Apply Cutoff from State File
+Look up blink directory in state file.
 
-Look up the blink directory in the state file.
+- **Entry exists**: Remove any flat dates older than the cutoff.
+- **No entry**: All dates remain candidates.
 
-- **Cutoff exists**: Discard any flat with `flat_date < cutoff_date`. If candidates remain, use the most recent valid flat. Done.
-- **No cutoff**: Proceed to interactive prompt.
+### Step 4: Categorize
 
-### Step 5: Interactive Prompt (Once Per Blink Directory)
+Split remaining candidates into:
 
-If running interactively (terminal attached, not `--quiet`):
+- **Older**: `flat_date < light_date`, sorted newest-first
+- **Newer**: `flat_date > light_date`, sorted oldest-first
 
-```
-No exact flat match. Oldest light: 2025-08-20, newest flat: 2025-08-03.
+### Step 5: Present to User
 
-Use old flats for this blink directory? [y/n]
-```
-
-**"y"**: Use old flats for this run. No state file change. Future runs will prompt again unless a cutoff is recorded.
-
-**"n"**: Record the oldest light date as the cutoff in the state file:
-
-```yaml
-"/mnt/data/RedCat51@f4.9+ASI2600MM/10_Blink": "2025-08-20"
-```
-
-Old flats are now blocked. Try newer flats (Step 6).
-
-**`--quiet` or non-interactive**: Skip old flats. Mark as missing.
-
-### Step 6: Try Newer Flats
-
-If no valid old flat, search for flats with `flat_date > light_date` and `flat_date >= cutoff_date` (if cutoff exists). Use the oldest one.
-
-### Step 7: No Match
-
-If no flat found, mark as missing and log a warning.
-
-## Decision Flowchart
+If running interactively (not `--quiet`):
 
 ```
-Exact date flat exists?
-  |
-  +-- YES --> use it
-  |
-  +-- NO --> --flat-state provided?
-              |
-              +-- NO --> mark missing
-              |
-              +-- YES --> find old flats
-                          |
-                          +-- cutoff in state file?
-                              |
-                              +-- YES --> filter by cutoff
-                              |           |
-                              |           +-- candidates remain? --> use most recent
-                              |           |
-                              |           +-- none remain --> try newer flats
-                              |
-                              +-- NO --> interactive?
-                                          |
-                                          +-- YES --> prompt user (once per blink dir)
-                                          |           |
-                                          |           +-- "y" --> use old flat
-                                          |           |
-                                          |           +-- "n" --> record cutoff,
-                                          |                       try newer flats
-                                          |
-                                          +-- NO --> mark missing
+No exact flat for light date 2025-08-20.
+
+Available flat dates:
+  [1] 2025-08-15  (5 days older) ← recommended
+  [2] 2025-08-03  (17 days older)
+  [3] 2025-08-25  (5 days newer)
+  [4] 2025-09-01  (12 days newer)
+  [0] None of these work (record rig change)
+
+Select [1]:
 ```
+
+Default recommendation: newest older flat, or oldest newer flat if no older candidates.
+
+### Step 6: Handle Selection
+
+**User selects a flat date**:
+- Use that flat
+- Update state file: set cutoff to the selected date (flats from this date onward are valid)
+- Future runs with `flat_date >= cutoff` proceed without prompting
+
+**User selects "none work" (0)**:
+- Record the light date as the new cutoff
+- This means: "rig changed, need flats from this date or later"
+- Mark flat as missing
+- Future runs will only consider flats >= light_date
+
+**`--quiet` or non-interactive**:
+- If state file has a cutoff and valid candidates exist: use newest older (or oldest newer)
+- Otherwise: mark missing
 
 ## Examples
 
-### Example 1: First Run, User Accepts Old Flats
+### Example 1: First Run, No State Entry
 
-Blink directory: `/data/RedCat51@f4.9+ASI2600MM/10_Blink`
-Light date: 2025-08-20, available flat: 2025-08-03
-No entry in state file.
+Light date: 2025-08-20
+Available flats: 2025-08-03, 2025-08-15, 2025-09-01
+State file: no entry for this blink directory
 
-1. Exact match: not found
-2. Old flat found: 2025-08-03
-3. No cutoff in state file
-4. Prompt: "Use old flats for this blink directory? [y/n]"
-5. User says "y": flat from 2025-08-03 is used
+1. No cutoff → all three dates are candidates
+2. Prompt user with list
+3. User selects 2025-08-15
+4. State file updated: `"/path/to/blink": "2025-08-15"`
+5. Flat from 2025-08-15 used
 
-Next run: same prompt (no cutoff was recorded).
+### Example 2: Subsequent Run, State Entry Exists
 
-### Example 2: User Records Rig Change
+Light date: 2025-09-10
+Available flats: 2025-08-03, 2025-08-15, 2025-09-01
+State file: `"/path/to/blink": "2025-08-15"`
 
-Same setup, but user says "n" at the prompt.
+1. Cutoff is 2025-08-15 → reject 2025-08-03
+2. Remaining: 2025-08-15, 2025-09-01
+3. Both are older than light (2025-09-10)
+4. Newest older is 2025-09-01 → use automatically (no prompt needed, cutoff confirms validity)
 
-1. State file updated: `"/data/RedCat51@f4.9+ASI2600MM/10_Blink": "2025-08-20"`
-2. Flat from 2025-08-03 is blocked (before cutoff)
-3. Try newer flats: none found
-4. Mark missing
+### Example 3: User Indicates Rig Change
 
-Later: user takes new flats on 2025-09-01. Next run finds flat >= cutoff. Used automatically.
+Light date: 2025-10-01
+Available flats: 2025-08-15, 2025-09-01
+State file: `"/path/to/blink": "2025-08-15"`
 
-### Example 3: Cutoff Already Recorded
+1. Cutoff 2025-08-15 → both candidates valid
+2. Prompt user (both are older than light)
+3. User selects "0" (none work - rig changed)
+4. State file updated: `"/path/to/blink": "2025-10-01"`
+5. Flat marked missing
 
-State file has cutoff 2025-09-01 for this blink directory.
-Processing lights from 2025-09-15.
+Later: user takes new flats on 2025-10-05. Next run finds 2025-10-05 >= cutoff 2025-10-01. Used automatically.
 
-1. Exact match: not found
-2. Old flats: 2025-08-03 (before cutoff), 2025-09-05 (after cutoff)
-3. Apply cutoff: only 2025-09-05 survives
-4. Use 2025-09-05 automatically (no prompt needed)
+### Example 4: Only Newer Flats Available
 
-### Example 4: Processing Old Data
+Light date: 2025-07-01
+Available flats: 2025-08-15, 2025-09-01
+State file: `"/path/to/blink": "2025-08-15"`
 
-State file has cutoff 2025-09-01.
-Processing old lights from 2025-07-10.
-
-1. Light date 2025-07-10 < cutoff 2025-09-01
-2. The cutoff doesn't apply to lights from before the rig change
-3. Old flat from 2025-07-01 is valid
-4. Prompt user (or use if they previously said "y" for this date range)
-
-Wait -- this is a complication. Does the cutoff apply based on light date or universally?
-
-**Decision**: The cutoff means "for lights from this date onward, flats must be from this date or later." Lights from before the cutoff date can still use older flats. This requires comparing `light_date >= cutoff_date` before applying the cutoff filter.
-
-Updated logic in Step 4:
-- If `cutoff exists AND light_date >= cutoff_date`: apply cutoff filter
-- Otherwise: no cutoff applies
+1. Both flats are newer than light date
+2. Oldest newer is 2025-08-15
+3. Prompt user (or auto-select in quiet mode since cutoff confirms 2025-08-15 is valid)
 
 ### Example 5: Quiet Mode
 
-Running with `--quiet`. No exact match. Old flats exist but no cutoff confirms them.
+Running with `--quiet`. State file has cutoff 2025-08-15.
 
-1. Non-interactive: cannot prompt
-2. Mark missing
+1. Find candidates >= cutoff
+2. If any exist: use newest older than light (or oldest newer)
+3. If none: mark missing
 
-This is intentionally conservative.
+No prompting. Cutoff from state file determines validity.
+
+## State File Semantics
+
+The stored date means: **"Flats from this date or later are valid for this blink directory."**
+
+- When user selects a flat, the state is updated to that flat's date
+- When user says "none work", the state is updated to the light's date
+- Subsequent runs auto-accept flats >= stored date without prompting
+
+This accumulates trust: once a flat date is validated, it stays validated. If the user later changes the rig, they select "none work" and the cutoff advances.
+
+## Prompt Frequency
+
+Once per blink directory per run. The decision applies to all lights in that directory.
 
 ## Backwards Compatibility
 
-- Without `--flat-state`: behavior identical to current (exact date only)
+- Without `--flat-state`: exact match only (no change)
 - State file is opt-in
-- No changes to library structure or metadata format
+- No changes to library structure
 
 ## Implementation Notes
 
-### State File Key
+### Files to Modify
 
-The key is the blink directory path as provided to the CLI (after environment variable expansion and path resolution). This ensures consistency across runs.
-
-### Prompt Frequency
-
-Prompt once per blink directory per run. If the user says "y" or "n", that decision applies to all filters/dates within that blink directory for the current run.
+- `__main__.py` – add `--flat-state` arg
+- `copy_masters.py` – prompt logic, state file I/O
+- `matching.py` – return candidate flat dates, accept cutoff filter
+- New: `flat_state.py` – state file read/write helpers
 
 ### Dependencies
 
-- PyYAML for state file I/O (already available via astropy)
-
-### Files to Modify
-
-- `ap_copy_master_to_blink/__main__.py` -- add `--flat-state` arg
-- `ap_copy_master_to_blink/matching.py` -- accept cutoff date, implement filtering
-- `ap_copy_master_to_blink/copy_masters.py` -- handle prompting, state file I/O
-- New: `ap_copy_master_to_blink/flat_state.py` -- state file read/write
-
-### Testing Strategy
-
-- Unit tests for state file parsing
-- Unit tests for cutoff filtering logic
-- Unit tests for prompt flow (mocked stdin)
-- Integration test with state file
-- Existing tests unchanged when `--flat-state` not provided
+- PyYAML (already available via astropy)
