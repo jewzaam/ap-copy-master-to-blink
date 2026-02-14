@@ -55,7 +55,7 @@ No exact flat for 2025-08-20 (filter: Ha)
 
 **Selecting a date**: Uses that flat, updates cutoff to selected date.
 
-**Selecting "none of these"**: Records the light date as cutoff (rig changed), marks flat missing.
+**Selecting "none of these"**: Records the light date as cutoff (rig changed), marks flat missing. Edge case: if newer flats were shown, they remain valid candidates on subsequent runs. The typical use case is selecting a newer flat when available; rejecting all options is unusual and the state file can be manually edited if needed.
 
 ## Quiet Mode
 
