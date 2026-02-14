@@ -8,6 +8,11 @@ When no exact-date flat exists, the tool can find and use flats from other dates
 ap-copy-master-to-blink <library> <blink> --flat-state ~/.ap-flat-state.yaml
 ```
 
+```
+--flat-state <path>         Path to state file (enables flexible matching)
+--flat-picker-limit N       Max older/newer flats to show in picker (default: 5)
+```
+
 Without `--flat-state`: exact date matches only.
 
 With `--flat-state`: interactive date selection when no exact match exists.
@@ -33,6 +38,7 @@ No exact flat for 2025-08-20 (filter: Ha)
   2025-08-17  (3 days older)
   2025-08-10  (10 days older)
   2025-08-03  (17 days older)
+  ... 12 more older flats not shown
   ────────────────────────────
 ▸ None of these (rig changed)
   ────────────────────────────
@@ -44,7 +50,7 @@ No exact flat for 2025-08-20 (filter: Ha)
 
 "None" is centered and pre-selected. Move up to select older flats, down for newer flats.
 
-**Limits**: Up to 5 most recent older flats and 5 oldest newer flats are shown. This keeps the list manageable even when many flat dates exist.
+**Limits**: `--flat-picker-limit N` controls how many older/newer flats to show (default: 5). When more candidates exist than the limit, a message indicates how many are hidden.
 
 **Selecting a date**: Uses that flat, updates cutoff to selected date.
 
