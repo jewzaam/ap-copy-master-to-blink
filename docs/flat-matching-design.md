@@ -28,8 +28,7 @@ When prompted, an interactive picker appears:
 ```
 No exact flat for 2025-08-20 (filter: Ha)
 
-  2025-08-15  (5 days older)
-▸ 2025-08-03  (17 days older)
+▸ 2025-08-17  (3 days older)
   2025-08-25  (5 days newer)
   ────────────────────────────
   None of these (rig changed)
@@ -37,7 +36,7 @@ No exact flat for 2025-08-20 (filter: Ha)
 ↑/↓ to move, Enter to select
 ```
 
-Navigate with arrow keys, select with Enter.
+Two candidates: the newest older flat (pre-selected) and the oldest newer flat. Navigate with arrow keys, select with Enter.
 
 **Selecting a date**: Uses that flat, updates cutoff to selected date.
 
