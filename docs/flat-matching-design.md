@@ -51,7 +51,7 @@ No exact flat for 2025-08-20 (filter: Ha)
 
 "None" is centered and pre-selected. Move up to select older flats, down for newer flats.
 
-**Limits**: `--picker-limit N` controls how many older/newer flats to show (default: 5). When more candidates exist, an informational line (not selectable) indicates how many are hidden.
+**Limits**: `--picker-limit N` controls how many older/newer flats to show (default: 5). The "not shown" message only appears when the limit truncates candidates—not when the cutoff already filtered them out.
 
 **Selecting a date**: Uses that flat, updates cutoff to selected date.
 
