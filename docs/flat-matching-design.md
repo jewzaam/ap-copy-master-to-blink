@@ -51,6 +51,10 @@ No exact flat for 2025-08-20 (filter: Ha)
 
 With `--quiet`: **exact date matches only**. No fallback selection, no prompting. Missing flats are logged and counted.
 
+## Dry Run Mode
+
+With `--dryrun`: full interactive behavior, but state file is not modified. Selections update an in-memory copy of the state, so subsequent processing within the same run behaves correctly. The actual state file remains unchanged.
+
 ## State File
 
 Simple YAML mapping blink directory to cutoff date:
