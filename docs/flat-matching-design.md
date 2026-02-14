@@ -15,11 +15,13 @@ With `--flat-state`: interactive date selection when no exact match exists.
 ## How It Works
 
 1. **Exact match found** → use it, update state file cutoff to this date
-2. **No exact match** → gather candidate flat dates, filter by cutoff, prompt user
+2. **No exact match** → gather candidate flat dates (>= cutoff), prompt user
 
 The state file tracks the **oldest valid flat date** per blink directory. Flats older than the cutoff are automatically excluded.
 
 When an exact-match flat is used, the cutoff advances to that date. This keeps the cutoff current as new flats are taken.
+
+**Critical**: Lights needing flats are processed in chronological order (oldest first). This ensures state file updates cascade correctly—choices made for earlier dates inform what's valid for later dates.
 
 ## Interactive Selection
 
@@ -28,15 +30,18 @@ When prompted, an interactive picker appears:
 ```
 No exact flat for 2025-08-20 (filter: Ha)
 
-▸ 2025-08-17  (3 days older)
-  2025-08-25  (5 days newer)
+  2025-08-17  (3 days older)
+  2025-08-10  (10 days older)
   ────────────────────────────
-  None of these (rig changed)
+▸ None of these (rig changed)
+  ────────────────────────────
+  2025-08-25  (5 days newer)
+  2025-09-01  (12 days newer)
 
 ↑/↓ to move, Enter to select
 ```
 
-Two candidates: the newest older flat (pre-selected) and the oldest newer flat. Navigate with arrow keys, select with Enter.
+"None" is centered and pre-selected. Move up to select older flats, down for newer flats. All candidates >= cutoff are shown.
 
 **Selecting a date**: Uses that flat, updates cutoff to selected date.
 
