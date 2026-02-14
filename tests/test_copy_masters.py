@@ -319,14 +319,13 @@ class TestCLIFunctions(unittest.TestCase):
         """Test header printing."""
         library_path = Path("/library")
         blink_path = Path("/blink")
-        print_header(library_path, blink_path, dry_run=True, flat_date_tolerance=7)
+        print_header(library_path, blink_path, dry_run=True)
 
         output = mock_stdout.getvalue()
         self.assertIn("ap-copy-master-to-blink", output)
         self.assertIn(f"Library: {library_path}", output)
         self.assertIn(f"Blink:   {blink_path}", output)
         self.assertIn("Dry-run: True", output)
-        self.assertIn("Flat date tolerance: 7 days", output)
 
     @patch("sys.stdout", new_callable=StringIO)
     def test_print_summary(self, mock_stdout):

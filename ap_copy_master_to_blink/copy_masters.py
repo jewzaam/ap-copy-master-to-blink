@@ -175,7 +175,6 @@ def process_blink_directory(
     library_dir: Path,
     blink_dir: Path,
     dry_run: bool = False,
-    flat_date_tolerance: int = 0,
 ) -> Dict[str, int]:
     """
     Main orchestration logic to copy masters to blink directories.
@@ -184,9 +183,6 @@ def process_blink_directory(
         library_dir: Path to calibration library
         blink_dir: Path to blink directory tree
         dry_run: If True, log actions but don't copy files
-        flat_date_tolerance: Date tolerance in days for flat frame matching.
-            0 = exact match only (default). When > 0, flats from nearby dates
-            will be used if exact match not found.
 
     Returns:
         Dictionary with summary statistics:
@@ -237,9 +233,7 @@ def process_blink_directory(
         )
 
         # Find required masters
-        masters = determine_required_masters(
-            library_dir, light_metadata, flat_date_tolerance=flat_date_tolerance
-        )
+        masters = determine_required_masters(library_dir, light_metadata)
         dark = masters[TYPE_MASTER_DARK]
         bias = masters[TYPE_MASTER_BIAS]
         flat = masters[TYPE_MASTER_FLAT]
