@@ -9,8 +9,8 @@ ap-copy-master-to-blink <library> <blink> --flat-state ~/.ap-flat-state.yaml
 ```
 
 ```
---flat-state <path>         Path to state file (enables flexible matching)
---flat-picker-limit N       Max older/newer flats to show in picker (default: 5)
+--flat-state <path>       Path to state file (enables flexible matching)
+--picker-limit N          Max older/newer flats to show in picker (default: 5)
 ```
 
 Without `--flat-state`: exact date matches only.
@@ -50,7 +50,7 @@ No exact flat for 2025-08-20 (filter: Ha)
 
 "None" is centered and pre-selected. Move up to select older flats, down for newer flats.
 
-**Limits**: `--flat-picker-limit N` controls how many older/newer flats to show (default: 5). When more candidates exist than the limit, a message indicates how many are hidden.
+**Limits**: `--picker-limit N` controls how many older/newer flats to show (default: 5). When more candidates exist than the limit, a message indicates how many are hidden.
 
 **Selecting a date**: Uses that flat, updates cutoff to selected date.
 
