@@ -35,22 +35,23 @@ When prompted, an interactive picker appears:
 ```
 No exact flat for 2025-08-20 (filter: Ha)
 
-  2025-08-17  (3 days older)
-  2025-08-10  (10 days older)
-  2025-08-03  (17 days older)
   ... 12 more older flats not shown
+  2025-08-03  (17 days older)
+  2025-08-10  (10 days older)
+  2025-08-17  (3 days older)
   ────────────────────────────
 ▸ None of these (rig changed)
   ────────────────────────────
   2025-08-25  (5 days newer)
   2025-09-01  (12 days newer)
+  ... 3 more newer flats not shown
 
 ↑/↓ to move, Enter to select
 ```
 
 "None" is centered and pre-selected. Move up to select older flats, down for newer flats.
 
-**Limits**: `--picker-limit N` controls how many older/newer flats to show (default: 5). When more candidates exist than the limit, a message indicates how many are hidden.
+**Limits**: `--picker-limit N` controls how many older/newer flats to show (default: 5). When more candidates exist, an informational line (not selectable) indicates how many are hidden.
 
 **Selecting a date**: Uses that flat, updates cutoff to selected date.
 
