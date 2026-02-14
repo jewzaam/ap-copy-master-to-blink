@@ -1,5 +1,12 @@
 # ap-copy-master-to-blink
 
+[![Test](https://github.com/jewzaam/ap-copy-master-to-blink/actions/workflows/test.yml/badge.svg)](https://github.com/jewzaam/ap-copy-master-to-blink/actions/workflows/test.yml)
+[![Coverage](https://github.com/jewzaam/ap-copy-master-to-blink/actions/workflows/coverage.yml/badge.svg)](https://github.com/jewzaam/ap-copy-master-to-blink/actions/workflows/coverage.yml)
+[![Lint](https://github.com/jewzaam/ap-copy-master-to-blink/actions/workflows/lint.yml/badge.svg)](https://github.com/jewzaam/ap-copy-master-to-blink/actions/workflows/lint.yml)
+[![Format](https://github.com/jewzaam/ap-copy-master-to-blink/actions/workflows/format.yml/badge.svg)](https://github.com/jewzaam/ap-copy-master-to-blink/actions/workflows/format.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 Copy master calibration frames from library to blink directories where light frames are located.
 
 ## Overview
@@ -19,14 +26,29 @@ Copy master calibration frames from library to blink directories where light fra
 
 ## Master Frame Matching
 
+### Library Search Behavior
+
+Library searches read **actual FITS headers** from calibration files, not path structure.
+
+**Why this matters**:
+- Library directories use bare equipment names (e.g., `ATR585M/SQA55`) without KEY_VALUE encoding
+- Unlike blink directories (`{optic}@f{ratio}+{camera}`), library paths don't encode all metadata
+- Files are searched with `profileFromPath=False` to ensure camera, optic, filter, gain, offset, etc. come from FITS headers
+- Path-based metadata (like `DATE_2026-02-07`) still overrides file headers where present
+
+**Technical detail**: This uses the `profileFromPath=False` parameter when calling `ap_common` calibration utilities. See regression tests in `tests/test_matching.py::TestLibraryProfileFromPath` for implementation details.
+
 ### Dark Frames
 
 Priority matching (in order):
 
 1. **Exact exposure match**: Same camera, gain, offset, settemp, readoutmode, and exposure time
-2. **Shorter exposure + bias**: If no exact match, find the longest dark exposure < light exposure
+2. **Shorter exposure + bias** (requires `--allow-bias`): If no exact match, find the longest dark exposure < light exposure
    - **Requires matching bias**: Will not use shorter dark without bias
-3. **No match**: If no exact dark and no bias, skip (logged as missing)
+   - **Default behavior**: Without `--allow-bias`, only exact exposure match darks are copied
+3. **No match**: If no exact dark and no bias (or `--allow-bias` not specified), skip (logged as missing)
+
+**Note**: By default, only exact exposure match darks are copied. Use `--allow-bias` to enable shorter dark + bias frame matching.
 
 ### Flat Frames
 
@@ -41,13 +63,17 @@ Priority matching (in order):
 
 ## Installation
 
+### From Git
+
 ```bash
-# From source
+pip install git+https://github.com/jewzaam/ap-copy-master-to-blink.git
+```
+
+### Development
+
+```bash
 git clone https://github.com/jewzaam/ap-copy-master-to-blink.git
 cd ap-copy-master-to-blink
-make install
-
-# Development installation
 make install-dev
 ```
 
@@ -58,10 +84,16 @@ make install-dev
 python -m ap_copy_master_to_blink <library_dir> <blink_dir>
 
 # With dry-run (show what would be copied without copying)
-python -m ap_copy_master_to_blink <library_dir> <blink_dir> --dry-run
+python -m ap_copy_master_to_blink <library_dir> <blink_dir> --dryrun
 
 # With debug output
 python -m ap_copy_master_to_blink <library_dir> <blink_dir> --debug
+
+# With quiet mode (minimal output)
+python -m ap_copy_master_to_blink <library_dir> <blink_dir> --quiet
+
+# Allow shorter darks with bias frames
+python -m ap_copy_master_to_blink <library_dir> <blink_dir> --allow-bias
 
 # Real example
 python -m ap_copy_master_to_blink \
@@ -73,8 +105,10 @@ python -m ap_copy_master_to_blink \
 
 - `library_dir`: Path to calibration library (supports env vars like `$VAR` or `${VAR}`)
 - `blink_dir`: Path to blink directory tree (supports env vars)
-- `--dry-run`: Show what would be copied without actually copying files
+- `--dryrun`: Show what would be copied without actually copying files
 - `--debug`: Enable debug logging
+- `--quiet`, `-q`: Suppress progress output
+- `--allow-bias`: Allow shorter darks with bias frames (default: only exact exposure match darks)
 
 ## Directory Structure
 
@@ -167,6 +201,14 @@ Tests cover:
 - Dark/flat/bias matching logic
 - File copying and directory scanning
 - Edge cases (missing masters, date mismatches)
+
+## Documentation
+
+This tool is part of the astrophotography pipeline. For comprehensive documentation including workflow guides and integration with other tools, see:
+
+- [Pipeline Overview](https://github.com/jewzaam/ap-base/blob/main/docs/index.md) - Full pipeline documentation
+- [Workflow Guide](https://github.com/jewzaam/ap-base/blob/main/docs/workflow.md) - Detailed workflow with diagrams
+- [ap-copy-master-to-blink Reference](https://github.com/jewzaam/ap-base/blob/main/docs/tools/ap-copy-master-to-blink.md) - API reference for this tool
 
 ## Repository
 

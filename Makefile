@@ -1,6 +1,6 @@
 PYTHON := python
 
-.PHONY: install install-dev uninstall clean format format-check lint typecheck test test-verbose coverage default
+.PHONY: install install-dev install-no-deps uninstall clean format format-check lint typecheck test test-verbose coverage default
 
 default: format lint typecheck test coverage
 
@@ -10,6 +10,9 @@ install:
 
 install-dev:
 	$(PYTHON) -m pip install -e ".[dev]"
+
+install-no-deps:
+	$(PYTHON) -m pip install -e . --no-deps
 
 uninstall:
 	$(PYTHON) -m pip uninstall -y ap-copy-master-to-blink
@@ -26,7 +29,7 @@ format-check: install-dev
 	$(PYTHON) -m black --check ap_copy_master_to_blink tests
 
 lint: install-dev
-	$(PYTHON) -m flake8 --max-line-length=88 --extend-ignore=E203,W503,E501,F401 ap_copy_master_to_blink tests
+	$(PYTHON) -m flake8 --max-line-length=88 --extend-ignore=E203,W503 ap_copy_master_to_blink tests
 
 typecheck: install-dev
 	$(PYTHON) -m mypy ap_copy_master_to_blink

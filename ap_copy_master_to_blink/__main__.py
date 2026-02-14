@@ -13,6 +13,9 @@ from ap_common import setup_logging, replace_env_vars, resolve_path
 
 from .copy_masters import process_blink_directory
 
+EXIT_SUCCESS = 0
+EXIT_ERROR = 1
+
 
 def validate_directories(
     library_dir: Path, blink_dir: Path
@@ -69,18 +72,41 @@ def print_summary(stats: Dict[str, int]) -> None:
     Args:
         stats: Statistics dictionary from process_blink_directory
     """
+
+    def plural(count: int, singular: str) -> str:
+        """Format count with singular/plural form."""
+        return f"{count} {singular}{'s' if count != 1 else ''}"
+
+    def status_indicator(present: int, needed: int) -> str:
+        """Return status indicator based on present vs needed."""
+        return "ok" if present >= needed else "MISSING!"
+
     print(f"\n{'='*70}")
     print("Summary")
     print(f"{'='*70}")
-    print(f"Unique configurations processed: {stats['configs_processed']}")
-    print("\nMasters copied:")
-    print(f"  Biases: {stats['biases_copied']}")
-    print(f"  Darks:  {stats['darks_copied']}")
-    print(f"  Flats:  {stats['flats_copied']}")
-    print("\nMissing masters:")
-    print(f"  Biases: {stats['biases_missing']} (only needed for exposure mismatch)")
-    print(f"  Darks:  {stats['darks_missing']}")
-    print(f"  Flats:  {stats['flats_missing']}")
+    print(
+        f"Frames: {stats['frame_count']} lights "
+        f"({plural(stats['target_count'], 'target')}, "
+        f"{plural(stats['date_count'], 'date')}, "
+        f"{plural(stats['filter_count'], 'filter')})"
+    )
+
+    # CRITICAL: Output order MUST be: Biases, Darks, Flats
+    # CRITICAL: Bias MUST ALWAYS be shown (even if 0 of 0)
+    # This order has regressed multiple times - DO NOT CHANGE without updating tests
+    # See test_print_summary_output_order() in tests/test_copy_masters.py
+    print(
+        f"Biases: {stats['biases_present']} of {stats['biases_needed']} | "
+        f"{status_indicator(stats['biases_present'], stats['biases_needed'])}"
+    )
+    print(
+        f"Darks:  {stats['darks_present']} of {stats['darks_needed']} | "
+        f"{status_indicator(stats['darks_present'], stats['darks_needed'])}"
+    )
+    print(
+        f"Flats:  {stats['flats_present']} of {stats['flats_needed']} | "
+        f"{status_indicator(stats['flats_present'], stats['flats_needed'])}"
+    )
     print(f"{'='*70}\n")
 
 
@@ -94,8 +120,8 @@ Examples:
   # Basic usage
   python -m ap_copy_master_to_blink <library_dir> <blink_dir>
 
-  # With dry-run
-  python -m ap_copy_master_to_blink <library_dir> <blink_dir> --dry-run
+  # With dryrun
+  python -m ap_copy_master_to_blink <library_dir> <blink_dir> --dryrun
 
   # With debug output
   python -m ap_copy_master_to_blink <library_dir> <blink_dir> --debug
@@ -120,9 +146,16 @@ Examples:
     )
 
     parser.add_argument(
-        "--dry-run",
+        "--dryrun",
         action="store_true",
         help="Show what would be copied without actually copying files",
+    )
+
+    parser.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        help="Suppress progress output",
     )
 
     parser.add_argument(
@@ -131,37 +164,58 @@ Examples:
         help="Enable debug logging",
     )
 
+    parser.add_argument(
+        "--allow-bias",
+        action="store_true",
+        help="Allow shorter darks with bias frames. "
+        "Default: only exact exposure match darks are copied.",
+    )
+
     args = parser.parse_args()
 
     # Setup logging
-    log_level = "DEBUG" if args.debug else "INFO"
-    setup_logging(log_level)
+    setup_logging(name="ap_copy_master_to_blink", debug=args.debug, quiet=args.quiet)
+    setup_logging(name="ap_common", debug=args.debug, quiet=args.quiet)
 
     # Resolve paths (support environment variables)
-    library_dir = resolve_path(replace_env_vars(args.library_dir))
-    blink_dir = resolve_path(replace_env_vars(args.blink_dir))
+    library_dir = Path(resolve_path(replace_env_vars(args.library_dir)))
+    blink_dir = Path(resolve_path(replace_env_vars(args.blink_dir)))
 
     # Validate directories exist
     is_valid, error_message = validate_directories(library_dir, blink_dir)
     if not is_valid:
         print(f"Error: {error_message}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     # Print header
-    print_header(library_dir, blink_dir, args.dry_run)
+    if not args.quiet:
+        print_header(library_dir, blink_dir, args.dryrun)
 
     # Process blink directory
-    stats = process_blink_directory(library_dir, blink_dir, dry_run=args.dry_run)
+    stats = process_blink_directory(
+        library_dir,
+        blink_dir,
+        dry_run=args.dryrun,
+        quiet=args.quiet,
+        allow_bias=args.allow_bias,
+    )
 
     # Print summary
-    print_summary(stats)
+    if not args.quiet:
+        print_summary(stats)
 
-    # Return non-zero if any masters were missing
-    if stats["darks_missing"] > 0 or stats["flats_missing"] > 0:
-        print("Warning: Some master frames are missing. Check logs above for details.")
-        return 1
+    # Return non-zero if any masters are missing
+    darks_missing = stats["darks_needed"] - stats["darks_present"]
+    flats_missing = stats["flats_needed"] - stats["flats_present"]
 
-    return 0
+    if darks_missing > 0 or flats_missing > 0:
+        if not args.quiet:
+            print(
+                "Warning: Some master frames are missing. Check logs above for details."
+            )
+        return EXIT_ERROR
+
+    return EXIT_SUCCESS
 
 
 if __name__ == "__main__":
