@@ -122,7 +122,8 @@ def pick_flat_date(
 
     Args:
         light_date_str: Light frame date as string (YYYY-MM-DD)
-        filter_name: Filter name for display
+        filter_name: Filter name for display. Can be a single filter (e.g., "G")
+                    or "ALL (filter1, filter2, ...)" for batch selection
         older_dates: Older candidate dates, sorted ascending
         newer_dates: Newer candidate dates, sorted ascending
         picker_limit: Max older/newer dates to show
