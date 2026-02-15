@@ -55,6 +55,9 @@ python -m ap_copy_master_to_blink <library_dir> <blink_dir> --dryrun
 
 # Enable bias-compensated dark scaling (allows shorter dark exposures)
 python -m ap_copy_master_to_blink <library_dir> <blink_dir> --scale-dark
+
+# Enable flexible flat matching with state persistence
+python -m ap_copy_master_to_blink <library_dir> <blink_dir> --flat-state ~/.ap-flat-state.yaml
 ```
 
 ### Options
@@ -67,6 +70,9 @@ python -m ap_copy_master_to_blink <library_dir> <blink_dir> --scale-dark
 | `--debug` | Enable debug logging |
 | `--quiet`, `-q` | Suppress progress output |
 | `--scale-dark` | Scale dark frames using bias compensation (allows shorter exposures). Default: exact exposure match only |
+| `--flat-state PATH` | Path to flat state YAML file. Enables flexible flat date matching with interactive selection when no exact date match exists. |
+| `--picker-limit N` | Max older/newer flat dates to show in interactive picker (default: 5). Only used with `--flat-state`. |
+| `--date-dir-pattern PATTERN` | Regex pattern to match date directory where masters are copied (default: `"^DATE_.*"`). |
 
 ## Master Frame Matching
 
@@ -76,6 +82,8 @@ The tool matches calibration frames using FITS header metadata:
   - By default: exact exposure match only
   - With `--scale-dark`: allows shorter dark + bias frame combination
 - **Flat Frames**: Match by camera, optic, filter, gain, offset, settemp, readoutmode, focallen
+  - By default: exact date match only
+  - With `--flat-state`: interactive selection from older/newer dates when no exact match exists
 - **Bias Frames**: Match by camera, gain, offset, settemp, readoutmode (only copied when needed)
 
 See the [detailed documentation](https://github.com/jewzaam/ap-base/blob/main/docs/tools/ap-copy-master-to-blink.md#master-frame-matching) for complete matching logic and current limitations.

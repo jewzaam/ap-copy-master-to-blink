@@ -24,6 +24,14 @@ from ap_common.constants import (
 # Supported file extensions
 SUPPORTED_EXTENSIONS = {FILE_EXTENSION_FITS, FILE_EXTENSION_XISF}
 
+# Exit codes
+EXIT_SUCCESS = 0
+EXIT_ERROR = 1
+
+# Default regex pattern for finding date directory (where masters are copied)
+# Assumes other tools in the suite create directories matching this pattern
+DEFAULT_DATE_DIR_PATTERN = r"^DATE_.*"
+
 # Matching keywords for each master type
 DARK_MATCHING_KEYWORDS = [
     NORMALIZED_HEADER_CAMERA,
