@@ -93,6 +93,35 @@ class TestMatching(unittest.TestCase):
         self.assertEqual(result[NORMALIZED_HEADER_EXPOSURESECONDS], "120")
 
     @patch("ap_copy_master_to_blink.matching.find_darks_util")
+    def test_find_matching_dark_multiple_logging(self, mock_find_darks):
+        """Warn only when several darks share the chosen exposure."""
+
+        def dark(seconds, name):
+            return {
+                NORMALIZED_HEADER_EXPOSURESECONDS: seconds,
+                NORMALIZED_HEADER_FILENAME: f"/test/library/{name}",
+            }
+
+        logger_name = "ap_copy_master_to_blink.matching"
+
+        # Exact plus shorter darks (scale_darks): expected, no warning
+        mock_find_darks.return_value = [
+            dark("300", "d300.xisf"),
+            dark("60", "d60.xisf"),
+        ]
+        with self.assertNoLogs(logger_name, level="WARNING"):
+            find_matching_dark(self.library_dir, self.light_metadata, scale_darks=True)
+
+        # Two darks at the chosen exposure: ambiguous, warn with context
+        mock_find_darks.return_value = [dark("300", "a.xisf"), dark("300", "b.xisf")]
+        with self.assertLogs(logger_name, level="WARNING") as captured:
+            find_matching_dark(self.library_dir, self.light_metadata)
+        message = captured.output[0]
+        self.assertIn(str(self.library_dir), message)
+        self.assertIn("scale_darks=False", message)
+        self.assertIn("a.xisf, b.xisf", message)
+
+    @patch("ap_copy_master_to_blink.matching.find_darks_util")
     def test_find_matching_dark_no_match(self, mock_find_darks):
         """Test when no matching dark found."""
         mock_find_darks.return_value = []

@@ -852,6 +852,88 @@ class TestFlexibleFlatMatching(unittest.TestCase):
         # Flat should be missing
         self.assertEqual(stats["flats_present"], 0)
 
+    @patch("ap_copy_master_to_blink.orchestration.scan_blink_directories")
+    @patch("ap_copy_master_to_blink.orchestration.determine_required_masters")
+    @patch("ap_copy_master_to_blink.orchestration.check_masters_exist")
+    @patch("ap_copy_master_to_blink.orchestration.copy_master_to_blink")
+    @patch("ap_copy_master_to_blink.flat_batch_selection.resolve_flat_for_date")
+    @patch("ap_copy_master_to_blink.orchestration.find_flat_for_date")
+    @patch("ap_copy_master_to_blink.orchestration.load_state")
+    @patch("ap_copy_master_to_blink.orchestration.save_state")
+    def test_existing_flat_filter_skipped(
+        self,
+        mock_save_state,
+        mock_load_state,
+        mock_find_flat_for_date,
+        mock_resolve,
+        mock_copy,
+        mock_check,
+        mock_determine,
+        mock_scan,
+    ):
+        """Flat for B and darks already in DATE dir: only G flat prompted/copied."""
+
+        def light(filter_name):
+            return {
+                NORMALIZED_HEADER_FILENAME: (
+                    f"/blink/M31/DATE_2024-01-15/FILTER_{filter_name}/light.fits"
+                ),
+                NORMALIZED_HEADER_CAMERA: "ASI2600MM",
+                NORMALIZED_HEADER_GAIN: "100",
+                NORMALIZED_HEADER_OFFSET: "50",
+                NORMALIZED_HEADER_SETTEMP: "-10",
+                NORMALIZED_HEADER_READOUTMODE: "0",
+                NORMALIZED_HEADER_EXPOSURESECONDS: "300",
+                NORMALIZED_HEADER_FILTER: filter_name,
+                NORMALIZED_HEADER_DATE: "2024-01-15",
+            }
+
+        mock_scan.return_value = [light("B"), light("G")]
+        mock_load_state.return_value = {}
+        dark = {NORMALIZED_HEADER_FILENAME: "/lib/dark.xisf"}
+        # Dark present for both, flat present only for B
+        mock_check.side_effect = lambda date_dir, light_metadata, scale_darks: {
+            "has_dark": True,
+            "has_bias": False,
+            "has_flat": light_metadata[NORMALIZED_HEADER_FILTER] == "B",
+        }
+
+        # Dark in library, no exact flat for either filter
+        mock_determine.return_value = {
+            TYPE_MASTER_DARK: dark,
+            TYPE_MASTER_BIAS: None,
+            TYPE_MASTER_FLAT: None,
+        }
+        mock_resolve.return_value = "2024-01-10"
+        mock_find_flat_for_date.return_value = {
+            NORMALIZED_HEADER_FILENAME: "/lib/flat_G_10.xisf"
+        }
+
+        stats = process_blink_directory(
+            Path("/library"),
+            Path("/blink"),
+            dry_run=False,
+            flat_state_path=Path("/state.yaml"),
+            date_dir_pattern=config.DEFAULT_DATE_DIR_PATTERN,
+        )
+
+        # Prompted once, for G only
+        mock_resolve.assert_called_once()
+        self.assertEqual(mock_resolve.call_args[0][3], {"G"})
+        # Flat looked up and copied for G only
+        mock_find_flat_for_date.assert_called_once()
+        self.assertEqual(
+            mock_find_flat_for_date.call_args[0][1][NORMALIZED_HEADER_FILTER], "G"
+        )
+        mock_copy.assert_called_once()
+        self.assertEqual(
+            mock_copy.call_args[0][0][NORMALIZED_HEADER_FILENAME],
+            "/lib/flat_G_10.xisf",
+        )
+        self.assertEqual(stats["flats_needed"], 2)
+        self.assertEqual(stats["flats_present"], 2)
+        self.assertEqual(stats["darks_present"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

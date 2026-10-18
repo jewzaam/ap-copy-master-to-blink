@@ -63,6 +63,7 @@ from ap_common.constants import (
     NORMALIZED_HEADER_SETTEMP,
     NORMALIZED_HEADER_READOUTMODE,
     NORMALIZED_HEADER_EXPOSURESECONDS,
+    NORMALIZED_HEADER_FILENAME,
     NORMALIZED_HEADER_DATE,
     NORMALIZED_HEADER_FILTER,
     NORMALIZED_HEADER_OPTIC,
@@ -76,6 +77,7 @@ def find_matching_dark(
     library_dir: Path,
     light_metadata: Dict[str, str],
     scale_darks: bool = False,
+    recursive: bool = True,
 ) -> Optional[Dict[str, str]]:
     """
     Find matching dark frame for a light frame.
@@ -89,6 +91,7 @@ def find_matching_dark(
         light_metadata: Metadata dictionary for light frame
         scale_darks: If False, only exact exposure match darks are returned.
                     If True, shorter exposure darks are also allowed.
+        recursive: Search subdirectories of library_dir
 
     Returns:
         Metadata dict for matching dark, or None if no match found
@@ -105,7 +108,7 @@ def find_matching_dark(
             NORMALIZED_HEADER_READOUTMODE,
         ],
         allow_shorter_exposure=scale_darks,
-        recursive=True,
+        recursive=recursive,
         profileFromPath=False,  # Read file headers, not path structure
         printStatus=False,  # No progress output for library search
     )
@@ -117,9 +120,21 @@ def find_matching_dark(
         best_exposure = float(best_dark.get(NORMALIZED_HEADER_EXPOSURESECONDS, -1))
 
         if len(matches) > 1:
-            logger.warning(
-                f"Found {len(matches)} matching darks for exposure {exposure}s, "
-                f"using longest match: {best_exposure}s"
+            # Several darks at the chosen exposure is ambiguous. Extra shorter
+            # darks (scale_darks=True) are expected and only logged at debug.
+            tied = [
+                m
+                for m in matches
+                if float(m.get(NORMALIZED_HEADER_EXPOSURESECONDS, -1)) == best_exposure
+            ]
+            log = logger.warning if len(tied) > 1 else logger.debug
+            log(
+                f"Found {len(matches)} matching darks in {library_dir} "
+                f"(recursive={recursive}, scale_darks={scale_darks}) "
+                f"for exposure {exposure}s, using "
+                f"{Path(best_dark[NORMALIZED_HEADER_FILENAME]).name} "
+                f"({best_exposure}s); candidates: "
+                + ", ".join(Path(m[NORMALIZED_HEADER_FILENAME]).name for m in matches)
             )
 
         if best_exposure == exposure:
@@ -138,6 +153,7 @@ def find_matching_dark(
 def find_matching_bias(
     library_dir: Path,
     light_metadata: Dict[str, str],
+    recursive: bool = True,
 ) -> Optional[Dict[str, str]]:
     """
     Find matching bias frame for a light frame.
@@ -145,6 +161,7 @@ def find_matching_bias(
     Args:
         library_dir: Path to calibration library
         light_metadata: Metadata dictionary for light frame
+        recursive: Search subdirectories of library_dir
 
     Returns:
         Metadata dict for matching bias, or None if no match found
@@ -160,7 +177,7 @@ def find_matching_bias(
             NORMALIZED_HEADER_SETTEMP,
             NORMALIZED_HEADER_READOUTMODE,
         ],
-        recursive=True,
+        recursive=recursive,
         profileFromPath=False,  # Read file headers, not path structure
         printStatus=False,  # No progress output for library search
     )
@@ -169,7 +186,11 @@ def find_matching_bias(
     if matches:
         if len(matches) > 1:
             logger.warning(
-                f"Found {len(matches)} matching bias frames, using first match"
+                f"Found {len(matches)} matching bias frames in {library_dir} "
+                f"(recursive={recursive}), using "
+                f"{Path(matches[0][NORMALIZED_HEADER_FILENAME]).name}; "
+                f"candidates: "
+                + ", ".join(Path(m[NORMALIZED_HEADER_FILENAME]).name for m in matches)
             )
         logger.debug("Found matching bias")
         return matches[0]
@@ -222,9 +243,11 @@ def find_matching_flat(
             date = light_metadata.get(NORMALIZED_HEADER_DATE)
             filt = light_metadata.get(NORMALIZED_HEADER_FILTER)
             logger.warning(
-                f"Found {len(matches)} matching flats for "
-                f"date {date} and filter {filt}, "
-                f"using first match"
+                f"Found {len(matches)} matching flats in {library_dir} for "
+                f"date {date} and filter {filt}, using "
+                f"{Path(matches[0][NORMALIZED_HEADER_FILENAME]).name}; "
+                f"candidates: "
+                + ", ".join(Path(m[NORMALIZED_HEADER_FILENAME]).name for m in matches)
             )
         logger.debug("Found matching flat")
         return matches[0]
@@ -241,6 +264,7 @@ def find_candidate_flat_dates(
     library_dir: Path,
     light_metadata: Dict[str, str],
     cutoff_date: Optional[str] = None,
+    recursive: bool = True,
 ) -> Dict[str, Dict[str, str]]:
     """
     Find all candidate flat dates matching equipment criteria (ignoring date).
@@ -253,6 +277,7 @@ def find_candidate_flat_dates(
         library_dir: Path to calibration library
         light_metadata: Metadata dictionary for light frame
         cutoff_date: If set, exclude flats older than this date (YYYY-MM-DD)
+        recursive: Search subdirectories of library_dir
 
     Returns:
         Dictionary mapping date string (YYYY-MM-DD) to flat metadata dict.
@@ -273,7 +298,7 @@ def find_candidate_flat_dates(
             NORMALIZED_HEADER_FOCALLEN,
             # NOTE: date intentionally omitted for flexible matching
         ],
-        recursive=True,
+        recursive=recursive,
         profileFromPath=False,  # Read file headers, not path structure
         printStatus=False,  # No progress output for library search
     )

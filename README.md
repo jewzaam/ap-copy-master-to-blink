@@ -86,6 +86,8 @@ The tool matches calibration frames using FITS header metadata:
   - With `--flat-state`: interactive selection from older/newer dates when no exact match exists
 - **Bias Frames**: Match by camera, gain, offset, settemp, readoutmode (only copied when needed)
 
+A master is not copied if one matching the same criteria already exists in the target DATE directory. For flats the date is ignored, so a flat from any date counts and its filter is left out of the `--flat-state` prompt.
+
 See the [detailed documentation](https://github.com/jewzaam/ap-base/blob/main/docs/tools/ap-copy-master-to-blink.md#master-frame-matching) for complete matching logic and current limitations.
 
 ## Directory Structure
