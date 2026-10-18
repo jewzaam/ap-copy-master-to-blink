@@ -34,8 +34,10 @@ dev = [
     "pytest-mock>=3.0",
     "black>=23.0",
     "flake8>=6.0",
-    "mypy>=1.11.2",
+    "mypy>=1.11",
     "types-PyYAML>=6.0",
+    "xenon>=0.9",
+    "mutmut>=2.0,<3.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -45,10 +47,6 @@ include = ["ap_copy_master_to_blink*"]
 [tool.black]
 line-length = 88
 target-version = ["py310", "py311", "py312", "py313", "py314"]
-
-[tool.flake8]
-max-line-length = 88
-extend-ignore = ["E203", "E266", "E501", "W503"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

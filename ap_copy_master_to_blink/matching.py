@@ -76,6 +76,7 @@ logger = logging.getLogger(__name__)
 def find_matching_dark(
     library_dir: Path,
     light_metadata: Dict[str, str],
+    *,
     scale_darks: bool = False,
     recursive: bool = True,
 ) -> Optional[Dict[str, str]]:

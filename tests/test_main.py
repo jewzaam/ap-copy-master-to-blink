@@ -127,6 +127,56 @@ class TestMainCLI(unittest.TestCase):
     @patch("ap_copy_master_to_blink.__main__.validate_directories")
     @patch(
         "sys.argv",
+        ["ap-copy-master-to-blink", "/tmp/lib", "/tmp/blink", "--no-scale-dark"],
+    )
+    def test_no_scale_darks_flag(self, mock_validate, mock_process):
+        """Test --no-scale-dark passes scale_darks=False."""
+        mock_validate.return_value = (True, None)
+        mock_process.return_value = self.mock_stats_success
+
+        result = main()
+
+        self.assertEqual(result, EXIT_SUCCESS)
+        self.assertIs(mock_process.call_args.kwargs["scale_darks"], False)
+
+    @patch("ap_copy_master_to_blink.__main__.process_blink_directory")
+    @patch("ap_copy_master_to_blink.__main__.validate_directories")
+    @patch("sys.argv", ["ap-copy-master-to-blink", "/tmp/lib", "/tmp/blink"])
+    def test_scale_darks_default_off(self, mock_validate, mock_process):
+        """Test scale_darks defaults to False when neither flag is given."""
+        mock_validate.return_value = (True, None)
+        mock_process.return_value = self.mock_stats_success
+
+        main()
+
+        self.assertIs(mock_process.call_args.kwargs["scale_darks"], False)
+
+    @patch("ap_copy_master_to_blink.__main__.process_blink_directory")
+    @patch("ap_copy_master_to_blink.__main__.validate_directories")
+    @patch(
+        "sys.argv",
+        [
+            "ap-copy-master-to-blink",
+            "/tmp/lib",
+            "/tmp/blink",
+            "--date-dir-pattern",
+            "^NIGHT_.*",
+        ],
+    )
+    def test_date_dir_pattern_flag(self, mock_validate, mock_process):
+        """Test --date-dir-pattern value is passed through."""
+        mock_validate.return_value = (True, None)
+        mock_process.return_value = self.mock_stats_success
+
+        result = main()
+
+        self.assertEqual(result, EXIT_SUCCESS)
+        self.assertEqual(mock_process.call_args.kwargs["date_dir_pattern"], "^NIGHT_.*")
+
+    @patch("ap_copy_master_to_blink.__main__.process_blink_directory")
+    @patch("ap_copy_master_to_blink.__main__.validate_directories")
+    @patch(
+        "sys.argv",
         [
             "ap-copy-master-to-blink",
             "/tmp/lib",
