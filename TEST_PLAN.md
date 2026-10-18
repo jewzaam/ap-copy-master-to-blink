@@ -45,7 +45,7 @@ Tests for isolated functions with mocked dependencies.
 | `scanning.py` | `sort_groups_by_date()` | Ascending order, None date handling, preserves all groups | Pure logic |
 | `scanning.py` | `collect_filters_by_date()` | Single/multiple dates and filters, None values, malformed keys | Pure logic |
 | `file_operations.py` | `copy_master_to_blink()` | New file, existing file, dry run | Mocks `copy_file` |
-| `file_operations.py` | `check_masters_exist()` | No directory, no files, dark/flat/all/partial exists | Mocks `Path.exists` |
+| `file_operations.py` | `check_masters_exist()` | No directory, library queries run non-recursively on DATE dir, none match | Mocks matching functions |
 | `flat_batch_selection.py` | `find_candidate_dates_with_all_filters()` | Single/multiple filters, intersection, no common dates, cutoff | Mocks candidate search |
 | `flat_batch_selection.py` | `resolve_flat_for_date()` | Quiet mode, no candidates, user selection, rig changed, date split | Mocks picker and candidates |
 | `orchestration.py` | `process_blink_directory()` | Masters copied, state updates, dry run, quiet mode | End-to-end with mocks |

@@ -13,7 +13,7 @@ from ap_copy_master_to_blink.file_operations import (
     copy_master_to_blink,
     check_masters_exist,
 )
-from ap_common.constants import NORMALIZED_HEADER_FILENAME
+from ap_common.constants import NORMALIZED_HEADER_FILENAME, NORMALIZED_HEADER_FILTER
 
 
 class TestFileOperations(unittest.TestCase):
@@ -55,128 +55,60 @@ class TestFileOperations(unittest.TestCase):
         self.assertTrue(result)
         mock_copy.assert_not_called()
 
-    def test_check_masters_exist_no_directory(self):
-        """Test check_masters_exist with non-existent directory."""
-        dark = {NORMALIZED_HEADER_FILENAME: "/library/masterDark.xisf"}
-        bias = {NORMALIZED_HEADER_FILENAME: "/library/masterBias.xisf"}
-        flat = {NORMALIZED_HEADER_FILENAME: "/library/masterFlat.xisf"}
+    @patch("ap_copy_master_to_blink.file_operations.find_candidate_flat_dates")
+    @patch("ap_copy_master_to_blink.file_operations.find_matching_bias")
+    @patch("ap_copy_master_to_blink.file_operations.find_matching_dark")
+    def test_check_masters_exist_no_directory(self, mock_dark, mock_bias, mock_flats):
+        """Non-existent directory has no masters and is not searched."""
+        result = check_masters_exist(Path("/nonexistent"), {})
 
-        result = check_masters_exist(Path("/nonexistent"), dark, bias, flat)
+        self.assertEqual(
+            result, {"has_dark": False, "has_bias": False, "has_flat": False}
+        )
+        mock_dark.assert_not_called()
+        mock_bias.assert_not_called()
+        mock_flats.assert_not_called()
 
-        self.assertFalse(result["has_dark"])
-        self.assertFalse(result["has_bias"])
-        self.assertFalse(result["has_flat"])
+    @patch("ap_copy_master_to_blink.file_operations.find_candidate_flat_dates")
+    @patch("ap_copy_master_to_blink.file_operations.find_matching_bias")
+    @patch("ap_copy_master_to_blink.file_operations.find_matching_dark")
+    def test_check_masters_exist_uses_library_queries(
+        self, mock_dark, mock_bias, mock_flats
+    ):
+        """Library match queries run non-recursively on the DATE directory."""
+        light_metadata = {NORMALIZED_HEADER_FILTER: "B"}
+        mock_dark.return_value = {NORMALIZED_HEADER_FILENAME: "dark.xisf"}
+        mock_bias.return_value = None
+        mock_flats.return_value = {"2024-01-10": {}}
 
-    def test_check_masters_exist_no_files_requested(self):
-        """Test check_masters_exist when no specific files requested."""
-        with patch("pathlib.Path.exists", return_value=True):
-            result = check_masters_exist(Path("/blink/DATE_2024-01-15"))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            date_dir = Path(tmpdir)
+            result = check_masters_exist(date_dir, light_metadata, scale_darks=True)
 
-        self.assertFalse(result["has_dark"])
-        self.assertFalse(result["has_bias"])
-        self.assertFalse(result["has_flat"])
+        self.assertEqual(
+            result, {"has_dark": True, "has_bias": False, "has_flat": True}
+        )
+        mock_dark.assert_called_once_with(
+            date_dir, light_metadata, scale_darks=True, recursive=False
+        )
+        mock_bias.assert_called_once_with(date_dir, light_metadata, recursive=False)
+        mock_flats.assert_called_once_with(date_dir, light_metadata, recursive=False)
 
-    def test_check_masters_exist_dark_exists(self):
-        """Test check_masters_exist finds existing dark file."""
-        dark = {NORMALIZED_HEADER_FILENAME: "/library/masterDark.xisf"}
+    @patch("ap_copy_master_to_blink.file_operations.find_candidate_flat_dates")
+    @patch("ap_copy_master_to_blink.file_operations.find_matching_bias")
+    @patch("ap_copy_master_to_blink.file_operations.find_matching_dark")
+    def test_check_masters_exist_none_match(self, mock_dark, mock_bias, mock_flats):
+        """No matching masters in the DATE directory."""
+        mock_dark.return_value = None
+        mock_bias.return_value = None
+        mock_flats.return_value = {}
 
-        def mock_exists(self):
-            # Date directory exists, dark file exists
-            posix_path = (
-                self.as_posix()
-                if hasattr(self, "as_posix")
-                else str(self).replace("\\", "/")
-            )
-            return posix_path in [
-                "/blink/DATE_2024-01-15",
-                "/blink/DATE_2024-01-15/masterDark.xisf",
-            ]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = check_masters_exist(Path(tmpdir), {})
 
-        with patch("pathlib.Path.exists", mock_exists):
-            result = check_masters_exist(Path("/blink/DATE_2024-01-15"), dark=dark)
-
-        self.assertTrue(result["has_dark"])
-        self.assertFalse(result["has_bias"])
-        self.assertFalse(result["has_flat"])
-
-    def test_check_masters_exist_flat_exists(self):
-        """Test check_masters_exist finds existing flat file."""
-        flat = {NORMALIZED_HEADER_FILENAME: "/library/masterFlat.xisf"}
-
-        def mock_exists(self):
-            # Date directory exists, flat file exists
-            posix_path = (
-                self.as_posix()
-                if hasattr(self, "as_posix")
-                else str(self).replace("\\", "/")
-            )
-            return posix_path in [
-                "/blink/DATE_2024-01-15",
-                "/blink/DATE_2024-01-15/masterFlat.xisf",
-            ]
-
-        with patch("pathlib.Path.exists", mock_exists):
-            result = check_masters_exist(Path("/blink/DATE_2024-01-15"), flat=flat)
-
-        self.assertFalse(result["has_dark"])
-        self.assertFalse(result["has_bias"])
-        self.assertTrue(result["has_flat"])
-
-    def test_check_masters_exist_all_exist(self):
-        """Test check_masters_exist when all requested files exist."""
-        dark = {NORMALIZED_HEADER_FILENAME: "/library/masterDark.xisf"}
-        bias = {NORMALIZED_HEADER_FILENAME: "/library/masterBias.xisf"}
-        flat = {NORMALIZED_HEADER_FILENAME: "/library/masterFlat.xisf"}
-
-        def mock_exists(self):
-            # Date directory and all master files exist
-            posix_path = (
-                self.as_posix()
-                if hasattr(self, "as_posix")
-                else str(self).replace("\\", "/")
-            )
-            return posix_path in [
-                "/blink/DATE_2024-01-15",
-                "/blink/DATE_2024-01-15/masterDark.xisf",
-                "/blink/DATE_2024-01-15/masterBias.xisf",
-                "/blink/DATE_2024-01-15/masterFlat.xisf",
-            ]
-
-        with patch("pathlib.Path.exists", mock_exists):
-            result = check_masters_exist(
-                Path("/blink/DATE_2024-01-15"), dark, bias, flat
-            )
-
-        self.assertTrue(result["has_dark"])
-        self.assertTrue(result["has_bias"])
-        self.assertTrue(result["has_flat"])
-
-    def test_check_masters_exist_partial(self):
-        """Test check_masters_exist when only some files exist."""
-        dark = {NORMALIZED_HEADER_FILENAME: "/library/masterDark.xisf"}
-        bias = {NORMALIZED_HEADER_FILENAME: "/library/masterBias.xisf"}
-        flat = {NORMALIZED_HEADER_FILENAME: "/library/masterFlat.xisf"}
-
-        def mock_exists(self):
-            # Date directory exists, only dark exists
-            posix_path = (
-                self.as_posix()
-                if hasattr(self, "as_posix")
-                else str(self).replace("\\", "/")
-            )
-            return posix_path in [
-                "/blink/DATE_2024-01-15",
-                "/blink/DATE_2024-01-15/masterDark.xisf",
-            ]
-
-        with patch("pathlib.Path.exists", mock_exists):
-            result = check_masters_exist(
-                Path("/blink/DATE_2024-01-15"), dark, bias, flat
-            )
-
-        self.assertTrue(result["has_dark"])
-        self.assertFalse(result["has_bias"])
-        self.assertFalse(result["has_flat"])
+        self.assertEqual(
+            result, {"has_dark": False, "has_bias": False, "has_flat": False}
+        )
 
     def test_copy_file_receives_strings_not_paths(self):
         """Test that copy_file is called with strings, not Path objects.
