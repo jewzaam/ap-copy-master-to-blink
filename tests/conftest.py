@@ -29,6 +29,14 @@ _GUARDED_CALLS = (
 )
 
 
+def _resolve(path, dir_fd):
+    """Resolve path, honoring dir_fd as shutil.rmtree passes it on Linux."""
+    path = Path(path)
+    if dir_fd is not None and not path.is_absolute():
+        path = Path(os.readlink(f"/proc/self/fd/{dir_fd}")) / path
+    return path.resolve()
+
+
 @pytest.fixture(autouse=True)
 def _block_real_filesystem(monkeypatch: pytest.MonkeyPatch) -> None:
     """Never let a test move, copy or delete anything outside the temp dir."""
@@ -37,7 +45,7 @@ def _block_real_filesystem(monkeypatch: pytest.MonkeyPatch) -> None:
         def guarded(*args, **kwargs):
             for index in positions:
                 if index < len(args):
-                    path = Path(args[index]).resolve()
+                    path = _resolve(args[index], kwargs.get("dir_fd"))
                     if not path.is_relative_to(_ALLOWED_ROOT):
                         raise PermissionError(
                             f"Test tried to modify outside temp dir: {path}"
